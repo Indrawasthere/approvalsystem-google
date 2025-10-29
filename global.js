@@ -1,6 +1,6 @@
 // ============================================
-// PART 1: COMPLETE FIXED VERSION - MAIN FUNCTIONS
-// Adjusted for your sheet structure
+// PART 1: MAIN FUNCTIONS & CORE LOGIC
+// Multi-Layer Reusable Approval System
 // ============================================
 
 var DOCUMENT_TYPE_FOLDERS = {
@@ -8,6 +8,13 @@ var DOCUMENT_TYPE_FOLDERS = {
   "Quotation": "1QVTM_oTSQow9N0e1jNIAc-ADK0qvTwtz",
   "Proposal": "1QVTM_oTSQow9N0e1jNIAc-ADK0qvTwtz"
 };
+
+// GANTI INI DENGAN WEB APP URL LU
+var WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwJjiTVQOjoH0WGp85eV8jdtsneOa-sv0vG37XY641497eB5ooNaifKOGaa_lJZXKa1/exec";
+
+// ============================================
+// MAIN APPROVAL SENDER
+// ============================================
 
 function sendMultiLayerApproval() {
   try {
@@ -19,8 +26,8 @@ function sendMultiLayerApproval() {
       return;
     }
     
-    // FIXED: Correct range based on your sheet (A:N columns)
-    var dataRange = sheet.getRange("A2:N" + lastRow);
+    // Column mapping: A-O (15 columns)
+    var dataRange = sheet.getRange("A2:O" + lastRow);
     var data = dataRange.getValues();
     
     var results = [];
@@ -34,53 +41,71 @@ function sendMultiLayerApproval() {
       var documentType = row[3]; // Column D - Document Type
       var attachment = row[4]; // Column E - Attachment
       var sendStatus = row[5]; // Column F - Send Checkbox
-      var currentStatus = row[13]; // Column N - Status
+      var levelOneStatus = row[7]; // Column H - Level One Status
+      var levelTwoStatus = row[8]; // Column I - Level Two Status
+      var levelThreeStatus = row[9]; // Column J - Level Three Status
+      var levelOneEmail = row[10]; // Column K - Level One Email
+      var levelTwoEmail = row[11]; // Column L - Level Two Email
+      var levelThreeEmail = row[12]; // Column M - Level Three Email
+      var currentEditor = row[13]; // Column N - Current Editor
+      var overallStatus = row[14]; // Column O - Overall Status
       
+      // Skip empty rows
       if (!name || !email) continue;
       
+      // Check if send checkbox is checked
       var isChecked = (sendStatus === true || sendStatus === "TRUE" || sendStatus === "true");
-      var isActive = (currentStatus === "ACTIVE" || currentStatus === "" || !currentStatus);
       
-      if (isChecked && isActive) {
+      if (isChecked) {
         Logger.log("Processing: " + name + " - " + description);
         
+        // Validate attachment
         var validationResult = validateGoogleDriveAttachmentWithType(attachment, documentType);
         
-        // FIXED: Correct column indexes based on your sheet
-        var firstLayerStatus = row[7]; // Column H - FirstLayer
-        var secondLayerStatus = row[8]; // Column I - Second Layer  
-        var thirdLayerStatus = row[9]; // Column J - ThirdLayer
-
-        var firstLayerEmail = row[10]; // Column K - FirstLayerEmail
-        var secondLayerEmail = row[11]; // Column L - SecondLayer Email
-        var thirdLayerEmail = row[12]; // Column M - ThirdLayerEmall
-        
+        // Determine next approval layer
         var nextApproval = getNextApprovalLayerAndEmail(
-          firstLayerStatus, secondLayerStatus, thirdLayerStatus,
-          firstLayerEmail, secondLayerEmail, thirdLayerEmail
+          levelOneStatus, levelTwoStatus, levelThreeStatus,
+          levelOneEmail, levelTwoEmail, levelThreeEmail,
+          currentEditor
         );
         
         Logger.log("Next approval: " + nextApproval.layer + " -> " + nextApproval.email);
         
         if (nextApproval.layer !== "COMPLETED" && nextApproval.email) {
-          var approvalLink = generateMultiLayerApprovalLink(name, email, description, documentType, attachment, nextApproval.layer);
-          var emailSent = sendMultiLayerEmail(nextApproval.email, description, documentType, attachment, approvalLink, nextApproval.layer, validationResult);
+          var approvalLink = generateMultiLayerApprovalLink(
+            name, email, description, documentType, attachment, 
+            nextApproval.layer, "approve"
+          );
+          
+          var emailSent = sendMultiLayerEmail(
+            nextApproval.email, 
+            description, 
+            documentType, 
+            attachment, 
+            approvalLink, 
+            nextApproval.layer, 
+            validationResult,
+            nextApproval.isResubmit
+          );
           
           if (emailSent) {
-            // Store approval link in notes (Column G - Log)
+            // Update status to PROCESSING
+            sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
+            sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
+            
+            // Log approval link
             sheet.getRange(i + 2, 7).setNote("APPROVAL_LINK_" + nextApproval.layer + ": " + approvalLink);
-            sheet.getRange(i + 2, 14).setValue("PROCESSING");
-            sheet.getRange(i + 2, 14).setBackground("#FFF2CC");
             
             results.push({
               name: name,
               project: description,
               layer: nextApproval.layer,
-              status: "Email Sent to: " + nextApproval.email
+              status: "Email Sent to: " + nextApproval.email,
+              isResubmit: nextApproval.isResubmit
             });
             
             processedCount++;
-            Logger.log(" Approval email sent for: " + name);
+            Logger.log("✅ Approval email sent for: " + name);
           }
         }
         
@@ -98,36 +123,103 @@ function sendMultiLayerApproval() {
   }
 }
 
-function getNextApprovalLayerAndEmail(firstLayer, secondLayer, thirdLayer, firstLayerEmail, secondLayerEmail, thirdLayerEmail) {
-  Logger.log("Checking approval flow:");
-  Logger.log("First Layer: " + firstLayer + ", Second Layer: " + secondLayer + ", Third Layer: " + thirdLayer);
+// ============================================
+// CORE LOGIC: DETERMINE NEXT APPROVAL LAYER
+// ============================================
 
-  if (!firstLayer || firstLayer === "" || firstLayer === "PENDING") {
-    Logger.log("Next: First Layer");
-    return { layer: "FIRST_LAYER", email: firstLayerEmail };
+function getNextApprovalLayerAndEmail(levelOne, levelTwo, levelThree, levelOneEmail, levelTwoEmail, levelThreeEmail, currentEditor) {
+  Logger.log("Checking approval flow:");
+  Logger.log("Level One: " + levelOne + ", Level Two: " + levelTwo + ", Level Three: " + levelThree);
+  Logger.log("Current Editor: " + currentEditor);
+
+  // Handle editing states first based on Current Editor
+  if (currentEditor === "REQUESTER" && levelOne === "REJECTED") {
+    Logger.log("Requester editing after Level One rejection");
+    return { 
+      layer: "LEVEL_ONE", 
+      email: levelOneEmail,
+      isResubmit: true
+    };
   }
-  if (firstLayer === "APPROVED" && (!secondLayer || secondLayer === "" || secondLayer === "PENDING")) {
-    Logger.log("Next: Second Layer");
-    return { layer: "SECOND_LAYER", email: secondLayerEmail };
+  
+  if (currentEditor === "LEVEL_ONE" && levelTwo === "REJECTED") {
+    Logger.log("Level One editing after Level Two rejection");
+    return { 
+      layer: "LEVEL_TWO", 
+      email: levelTwoEmail,
+      isResubmit: true
+    };
   }
-  if (secondLayer === "APPROVED" && (!thirdLayer || thirdLayer === "" || thirdLayer === "PENDING")) {
-    Logger.log("Next: Third Layer");
-    return { layer: "THIRD_LAYER", email: thirdLayerEmail };
+  
+  if (currentEditor === "LEVEL_TWO" && levelThree === "REJECTED") {
+    Logger.log("Level Two editing after Level Three rejection");
+    return { 
+      layer: "LEVEL_THREE", 
+      email: levelThreeEmail,
+      isResubmit: true
+    };
   }
-  Logger.log("Next: COMPLETED");
-  return { layer: "COMPLETED", email: "" };
+
+  // Normal flow scenarios
+  // SCENARIO 1: First submission or pending Level One
+  if (!levelOne || levelOne === "" || levelOne === "PENDING") {
+    Logger.log("Next: Level One (First submission)");
+    return { 
+      layer: "LEVEL_ONE", 
+      email: levelOneEmail,
+      isResubmit: false
+    };
+  }
+  
+  // SCENARIO 2: Level One approved, proceed to Level Two
+  if (levelOne === "APPROVED" && (!levelTwo || levelTwo === "" || levelTwo === "PENDING")) {
+    Logger.log("Next: Level Two");
+    return { 
+      layer: "LEVEL_TWO", 
+      email: levelTwoEmail,
+      isResubmit: false
+    };
+  }
+  
+  // SCENARIO 3: Level Two approved, proceed to Level Three
+  if (levelTwo === "APPROVED" && (!levelThree || levelThree === "" || levelThree === "PENDING")) {
+    Logger.log("Next: Level Three");
+    return { 
+      layer: "LEVEL_THREE", 
+      email: levelThreeEmail,
+      isResubmit: false
+    };
+  }
+  
+  // SCENARIO 4: All approved - completed
+  if (levelOne === "APPROVED" && levelTwo === "APPROVED" && levelThree === "APPROVED") {
+    Logger.log("Next: COMPLETED");
+    return { 
+      layer: "COMPLETED", 
+      email: "",
+      isResubmit: false
+    };
+  }
+  
+  // Default: Stay at current state
+  Logger.log("Default: Maintaining current state");
+  return { 
+    layer: "LEVEL_ONE", 
+    email: levelOneEmail,
+    isResubmit: false
+  };
 }
 
-function generateMultiLayerApprovalLink(name, email, description, documentType, attachment, layer, action) {
-  // FIXED: Use your actual web app URL
-  var webAppUrl = "https://script.google.com/macros/s/AKfycbwet_AfptilcSFOJcL1Cas61Pxn8Yy8KnvoDwW5uyG_qEE6upJSKiSl92ek0jfA_PBA/exec";
+// ============================================
+// GENERATE APPROVAL LINK
+// ============================================
 
+function generateMultiLayerApprovalLink(name, email, description, documentType, attachment, layer, action) {
   var timestamp = new Date().getTime().toString(36);
   var nameCode = name ? name.substring(0, 3).toLowerCase() : "usr";
   var projectCode = description ? description.replace(/[^a-zA-Z0-9]/g, "").substring(0, 3).toLowerCase() : "prj";
   var uniqueCode = nameCode + projectCode + timestamp;
 
-  // FIXED: Ensure all parameters are properly encoded and have fallbacks
   var params = {
     action: action || "approve",
     name: encodeURIComponent(name || ""),
@@ -144,11 +236,160 @@ function generateMultiLayerApprovalLink(name, email, description, documentType, 
     .map(key => key + '=' + params[key])
     .join('&');
 
-  return webAppUrl + "?" + queryString;
+  return WEB_APP_URL + "?" + queryString;
 }
 
 // ============================================
-// FIXED: VALIDATION FUNCTIONS
+// AUTO-TRIGGER: SEND NEXT LAYER AFTER APPROVAL
+// ============================================
+
+function sendNextApprovalAfterLevelOne() {
+  Logger.log("Checking for Level Two approvals after Level One...");
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getRange("A2:O" + sheet.getLastRow()).getValues();
+  var processedCount = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var levelOneStatus = row[7]; // Column H
+    var levelTwoStatus = row[8]; // Column I
+    var overallStatus = row[14]; // Column O
+
+    if (levelOneStatus === "APPROVED" && 
+        (!levelTwoStatus || levelTwoStatus === "" || levelTwoStatus === "PENDING" || levelTwoStatus === "RESUBMIT") && 
+        overallStatus === "PROCESSING") {
+      
+      Logger.log("✅ Found eligible for Level Two approval: " + row[0]);
+
+      var levelTwoEmail = row[11]; // Column L
+      var name = row[0];
+      var email = row[1];
+      var description = row[2];
+      var documentType = row[3];
+      var attachment = row[4];
+
+      if (levelTwoEmail) {
+        var validationResult = validateGoogleDriveAttachmentWithType(attachment, documentType);
+        var approvalLink = generateMultiLayerApprovalLink(name, email, description, documentType, attachment, "LEVEL_TWO", "approve");
+        var isResubmit = (levelTwoStatus === "RESUBMIT");
+        var emailSent = sendMultiLayerEmail(levelTwoEmail, description, documentType, attachment, approvalLink, "LEVEL_TWO", validationResult, isResubmit);
+
+        if (emailSent) {
+          sheet.getRange(i + 2, 7).setNote("LEVEL_TWO_APPROVAL_SENT: " + new Date());
+          Logger.log("✅ Level Two approval email sent to: " + levelTwoEmail);
+          processedCount++;
+          Utilities.sleep(1000);
+        }
+      }
+    }
+  }
+
+  if (processedCount > 0) {
+    Logger.log("✅ Successfully sent " + processedCount + " Level Two approval emails!");
+  } else {
+    Logger.log("No pending Level Two approvals found");
+  }
+}
+
+function sendNextApprovalAfterLevelTwo() {
+  Logger.log("Checking for Level Three approvals after Level Two...");
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getRange("A2:O" + sheet.getLastRow()).getValues();
+  var processedCount = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var levelTwoStatus = row[8]; // Column I
+    var levelThreeStatus = row[9]; // Column J
+    var overallStatus = row[14]; // Column O
+
+    if (levelTwoStatus === "APPROVED" && 
+        (!levelThreeStatus || levelThreeStatus === "" || levelThreeStatus === "PENDING" || levelThreeStatus === "RESUBMIT") && 
+        overallStatus === "PROCESSING") {
+      
+      Logger.log("✅ Found eligible for Level Three approval: " + row[0]);
+
+      var levelThreeEmail = row[12]; // Column M
+      var name = row[0];
+      var email = row[1];
+      var description = row[2];
+      var documentType = row[3];
+      var attachment = row[4];
+
+      if (levelThreeEmail) {
+        var validationResult = validateGoogleDriveAttachmentWithType(attachment, documentType);
+        var approvalLink = generateMultiLayerApprovalLink(name, email, description, documentType, attachment, "LEVEL_THREE", "approve");
+        var isResubmit = (levelThreeStatus === "RESUBMIT");
+        var emailSent = sendMultiLayerEmail(levelThreeEmail, description, documentType, attachment, approvalLink, "LEVEL_THREE", validationResult, isResubmit);
+
+        if (emailSent) {
+          sheet.getRange(i + 2, 7).setNote("LEVEL_THREE_APPROVAL_SENT: " + new Date());
+          Logger.log("✅ Level Three approval email sent to: " + levelThreeEmail);
+          processedCount++;
+          Utilities.sleep(1000);
+        }
+      }
+    }
+  }
+
+  if (processedCount > 0) {
+    Logger.log("✅ Successfully sent " + processedCount + " Level Three approval emails!");
+  } else {
+    Logger.log("No pending Level Three approvals found");
+  }
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function getLayerDisplayName(layerCode) {
+  var layerNames = {
+    "LEVEL_ONE": "Level One",
+    "LEVEL_TWO": "Level Two",
+    "LEVEL_THREE": "Level Three",
+    "REQUESTER_EDIT": "Requester Edit",
+    "LEVEL_ONE_EDIT": "Level One Edit",
+    "LEVEL_TWO_EDIT": "Level Two Edit"
+  };
+  return layerNames[layerCode] || layerCode;
+}
+
+function getGMT7Time() {
+  var now = new Date();
+  var timeZone = "Asia/Jakarta";
+  var formattedDate = Utilities.formatDate(now, timeZone, "dd/MM/yyyy HH:mm:ss");
+  return formattedDate;
+}
+
+function showMultiLayerSummary(results, processedCount) {
+  if (processedCount > 0) {
+    var message = "Multi-Layer Approval Summary\n\nTotal processed: " + processedCount + "\n\n";
+    
+    var layerCount = {};
+    results.forEach(function(result) {
+      var key = result.layer + (result.isResubmit ? " (Resubmit)" : "");
+      if (!layerCount[key]) layerCount[key] = 0;
+      layerCount[key]++;
+    });
+    
+    for (var layer in layerCount) {
+      message += layer + ": " + layerCount[layer] + " emails\n";
+    }
+    
+    SpreadsheetApp.getUi().alert("Multi-Layer Approval Sent", message, SpreadsheetApp.getUi().ButtonSet.OK);
+  } else {
+    SpreadsheetApp.getUi().alert("No Action Needed", "No multi-layer approvals to send.", SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+// ============================================
+// PART 2: VALIDATION & EMAIL FUNCTIONS
+// Multi-Layer Reusable Approval System
+// ============================================
+
+// ============================================
+// ATTACHMENT VALIDATION
 // ============================================
 
 function validateGoogleDriveAttachmentWithType(attachmentUrl, documentType) {
@@ -193,7 +434,7 @@ function validateGoogleDriveAttachmentWithType(attachmentUrl, documentType) {
         };
       }
       
-      // FIXED: Check if file is in Shared Drive (safe version)
+      // Check if file is in Shared Drive
       var isSharedDrive = false;
       try {
         var driveFile = Drive.Files.get(fileId, {
@@ -206,7 +447,7 @@ function validateGoogleDriveAttachmentWithType(attachmentUrl, documentType) {
         isSharedDrive = false;
       }
       
-      // FIXED: Safe owner retrieval
+      // Safe owner retrieval
       var ownerEmail = "Unknown";
       try {
         var owner = file.getOwner();
@@ -286,10 +527,10 @@ function formatFileSize(bytes) {
 }
 
 // ============================================
-// EMAIL FUNCTIONS
+// EMAIL SENDING FUNCTIONS
 // ============================================
 
-function sendMultiLayerEmail(recipientEmail, description, documentType, attachment, approvalLink, layer, validationResult) {
+function sendMultiLayerEmail(recipientEmail, description, documentType, attachment, approvalLink, layer, validationResult, isResubmit) {
   try {
     if (!recipientEmail || recipientEmail.indexOf('@') === -1) {
       Logger.log("Invalid email: " + recipientEmail);
@@ -297,16 +538,22 @@ function sendMultiLayerEmail(recipientEmail, description, documentType, attachme
     }
     
     var layerDisplayNames = {
-      "FIRST_LAYER": "First Layer",
-      "SECOND_LAYER": "Second Layer",
-      "THIRD_LAYER": "Third Layer"
+      "LEVEL_ONE": "Level One",
+      "LEVEL_TWO": "Level Two",
+      "LEVEL_THREE": "Level Three",
+      "LEVEL_ONE_EDIT": "Level One (Edit & Resubmit)",
+      "LEVEL_TWO_EDIT": "Level Two (Edit & Resubmit)"
     };
     
     var layerDisplay = layerDisplayNames[layer] || layer;
     var companyName = "Atreus Global";
     
-    var subject = "Approval Request - " + description + " [" + layerDisplay + " Layer]";
+    // Subject line berbeda untuk resubmit
+    var subject = isResubmit ? 
+      "🔄 Resubmit Required - " + description + " [" + layerDisplay + "]" :
+      "Approval Request - " + description + " [" + layerDisplay + "]";
     
+    // Document type badge
     var docTypeBadge = "";
     if (documentType && documentType !== "") {
       var docTypeColors = {
@@ -318,6 +565,7 @@ function sendMultiLayerEmail(recipientEmail, description, documentType, attachme
       docTypeBadge = '<div style="display: inline-block; background: ' + badgeColor + '; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-bottom: 10px;">' + documentType + '</div>';
     }
     
+    // Attachment section
     var attachmentSection = "";
     if (attachment && attachment !== "") {
       if (validationResult.valid) {
@@ -325,7 +573,7 @@ function sendMultiLayerEmail(recipientEmail, description, documentType, attachme
           '<p><strong>Location:</strong> <span style="color: #3B82F6;">📁 Shared Drive</span></p>' :
           '<p><strong>Location:</strong> My Drive</p>';
         
-        attachmentSection = '<div class="attachment-box" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f2ff 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #90EE90;"><h3 style="color: #2E8B57;">Attachment (Validated)</h3>' + docTypeBadge + '<p><strong>File:</strong> ' + validationResult.name + '</p><p><strong>Type:</strong> ' + validationResult.type + '</p><p><strong>Size:</strong> ' + validationResult.sizeFormatted + '</p>' + driveTypeInfo + '<p><strong>Status:</strong> <span style="color: #2E8B57;">' + validationResult.message + '</span></p><p><a href="' + attachment + '" target="_blank" style="color: #326BC6;">View Document</a></p></div>';
+        attachmentSection = '<div class="attachment-box" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f2ff 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #90EE90;"><h3 style="color: #2E8B57;">Attachment (Validated)</h3>' + docTypeBadge + '<p><strong>File:</strong> ' + validationResult.name + '</p><p><strong>Type:</strong> ' + validationResult.type + '</p><p><strong>Size:</strong> ' + validationResult.sizeFormatted + '</p>' + driveTypeInfo + '<p><strong>Status:</strong> <span style="color: #2E8B57;">' + validationResult.message + '</span></p><p><a href="' + attachment + '" target="_blank" style="color: #326BC6; font-weight: 600;">📎 View Document</a></p></div>';
       } else {
         attachmentSection = '<div class="attachment-box" style="background: linear-gradient(135deg, #fff0f0 0%, #ffe6e6 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #FF6B6B;"><h3 style="color: #DC143C;">Attachment (Validation Failed)</h3>' + docTypeBadge + '<p><strong>Status:</strong> <span style="color: #DC143C;">' + validationResult.message + '</span></p><p><a href="' + attachment + '" target="_blank" style="color: #326BC6;">Check Link</a></p><p style="font-size: 12px; color: #666;"><em>Please ensure the Google Drive link is correct and accessible</em></p></div>';
       }
@@ -333,17 +581,31 @@ function sendMultiLayerEmail(recipientEmail, description, documentType, attachme
     
     var progressBar = getProgressBar(layer);
     
-    // FIXED: Improved styling with proper spacing and white button text
+    // Generate rejection link
     var rejectLink = generateMultiLayerApprovalLink("", "", description, documentType, attachment, layer, "reject");
-    var htmlBody = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#326BC6 0%,#183460 100%);padding:30px;text-align:center;color:white}.progress-track{background:#f8f9fa;padding:30px 20px;margin:0}.progress-steps{display:flex;justify-content:center;align-items:center;gap:40px;position:relative}.progress-step{text-align:center;position:relative}.step-number{width:40px;height:40px;border-radius:50%;margin:0 auto 8px;font-weight:600;display:flex;align-items:center;justify-content:center;font-size:16px}.step-active{background:#326BC6;color:white}.step-completed{background:#90EE90;color:#333}.step-pending{background:#e0e0e0;color:#666}.step-label{font-size:12px;font-weight:500}.content{padding:30px}.button{display:inline-block;padding:15px 30px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);color:white !important;text-decoration:none;border-radius:8px;margin:20px 10px;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:all 0.3s ease}.button:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(50,107,198,0.3)}.button-reject{background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);color:white !important;text-decoration:none;border-radius:8px;margin:20px 10px;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:all 0.3s ease}.button-reject:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(220,38,38,0.3)}.button-container{text-align:center;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #326BC6}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>Multi-Layer Approval Required</h1><p>Current Stage: ' + layerDisplay + ' Approval</p></div><div class="progress-track">' + progressBar + '</div><div class="content"><p>Hello,</p><p>This project requires your approval at the <strong>' + layerDisplay + '</strong> level:</p><div class="info-box"><h3>' + description + '</h3><p><strong>Current Stage:</strong> ' + layerDisplay + ' Approval</p><p><strong>Date:</strong> ' + getGMT7Time() + '</p></div>' + attachmentSection + '<p>Please choose your decision:</p><div class="button-container"><a href="' + approvalLink + '" class="button" style="color: white !important;">APPROVE AS ' + layerDisplay + '</a><a href="' + rejectLink + '" class="button-reject" style="color: white !important;">REJECT WITH NOTE</a></div><p style="text-align: center; font-size: 12px; color: #666;"><em>Approval Code: ' + getApprovalCodeFromLink(approvalLink) + ' | Link expires in 3 days</em></p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' + new Date().getFullYear() + ' ' + companyName + '. All rights reserved.</p></div></div></body></html>';
     
-    var plainBody = "MULTI-LAYER APPROVAL REQUEST\n\nProject: " + description + "\nDocument Type: " + documentType + "\nCurrent Stage: " + layerDisplay + " Approval\n\n";
-    
-    if (attachment && attachment !== "") {
-      plainBody += "Attachment: " + attachment + "\nAttachment Status: " + validationResult.message + "\n\n";
+    // Resubmit notice (jika ini resubmit)
+    var resubmitNotice = "";
+    if (isResubmit) {
+      resubmitNotice = '<div style="background: #FFF4E6; border-left: 4px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;"><strong style="color: #F59E0B;">🔄 RESUBMIT REQUIRED</strong><p style="margin: 8px 0 0 0; color: #92400E;">This document was previously rejected and has been revised. Please review the changes and approve or reject again.</p></div>';
     }
     
-    plainBody += "Approve: " + approvalLink + "\nReject: " + rejectLink + "\n\nThank you.\n\nThis is an automated email from " + companyName + ".";
+    var htmlBody = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#326BC6 0%,#183460 100%);padding:30px;text-align:center;color:white}.progress-track{background:#f8f9fa;padding:30px 20px;margin:0}.progress-steps{display:flex;justify-content:center;align-items:center;gap:40px;position:relative}.progress-step{text-align:center;position:relative}.step-number{width:40px;height:40px;border-radius:50%;margin:0 auto 8px;font-weight:600;display:flex;align-items:center;justify-content:center;font-size:16px}.step-active{background:#326BC6;color:white}.step-completed{background:#90EE90;color:#333}.step-pending{background:#e0e0e0;color:#666}.step-label{font-size:12px;font-weight:500}.content{padding:30px}.button{display:inline-block;padding:15px 30px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);color:white !important;text-decoration:none;border-radius:8px;margin:20px 10px;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:all 0.3s ease}.button:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(50,107,198,0.3)}.button-reject{background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);color:white !important;padding:15px 30px;text-decoration:none;border-radius:8px;margin:20px 10px;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:all 0.3s ease}.button-reject:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(220,38,38,0.3)}.button-container{text-align:center;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #326BC6}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>Multi-Layer Approval ' + (isResubmit ? 'Resubmit' : 'Required') + '</h1><p>Current Stage: ' + layerDisplay + '</p></div><div class="progress-track">' + progressBar + '</div><div class="content">' + resubmitNotice + '<p>Hello,</p><p>This project requires your approval at the <strong>' + layerDisplay + '</strong> level:</p><div class="info-box"><h3>' + description + '</h3><p><strong>Current Stage:</strong> ' + layerDisplay + '</p><p><strong>Date:</strong> ' + getGMT7Time() + '</p></div>' + attachmentSection + '<p>Please choose your decision:</p><div class="button-container"><a href="' + approvalLink + '" class="button" style="color: white !important;">✓ APPROVE</a><a href="' + rejectLink + '" class="button-reject" style="color: white !important;">✗ REJECT & SEND BACK</a></div><p style="text-align: center; font-size: 12px; color: #666;"><em>Link expires in 7 days</em></p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' + new Date().getFullYear() + ' ' + companyName + '. All rights reserved.</p></div></div></body></html>';
+    
+    var plainBody = "MULTI-LAYER APPROVAL REQUEST" + (isResubmit ? " (RESUBMIT)" : "") + "\n\n" +
+      "Project: " + description + "\n" +
+      "Document Type: " + documentType + "\n" +
+      "Current Stage: " + layerDisplay + "\n\n";
+    
+    if (attachment && attachment !== "") {
+      plainBody += "Attachment: " + attachment + "\n" +
+        "Attachment Status: " + validationResult.message + "\n\n";
+    }
+    
+    plainBody += "Approve: " + approvalLink + "\n" +
+      "Reject: " + rejectLink + "\n\n" +
+      "Thank you.\n\n" +
+      "This is an automated email from " + companyName + ".";
     
     MailApp.sendEmail({
       to: recipientEmail,
@@ -352,20 +614,35 @@ function sendMultiLayerEmail(recipientEmail, description, documentType, attachme
       body: plainBody
     });
     
-    Logger.log(" Multi-layer email sent to: " + recipientEmail + " for layer: " + layerDisplay);
+    Logger.log("✅ Email sent to: " + recipientEmail + " for layer: " + layerDisplay + (isResubmit ? " (Resubmit)" : ""));
     return true;
     
   } catch (error) {
-    Logger.log("Error sending multi-layer email: " + error.toString());
+    Logger.log("❌ Error sending email: " + error.toString());
     return false;
   }
 }
 
 function getProgressBar(currentLayer) {
   var steps = [
-    { number: 1, label: "First Layer", status: currentLayer === "FIRST_LAYER" ? "active" : (["SECOND_LAYER", "THIRD_LAYER", "COMPLETED"].includes(currentLayer) ? "completed" : "pending") },
-    { number: 2, label: "Second Layer", status: currentLayer === "SECOND_LAYER" ? "active" : (["THIRD_LAYER", "COMPLETED"].includes(currentLayer) ? "completed" : "pending") },
-    { number: 3, label: "Third Layer", status: currentLayer === "THIRD_LAYER" ? "active" : (currentLayer === "COMPLETED" ? "completed" : "pending") }
+    { 
+      number: 1, 
+      label: "Level One", 
+      status: (currentLayer === "LEVEL_ONE" || currentLayer === "LEVEL_ONE_EDIT") ? "active" : 
+              (["LEVEL_TWO", "LEVEL_TWO_EDIT", "LEVEL_THREE", "COMPLETED"].includes(currentLayer) ? "completed" : "pending") 
+    },
+    { 
+      number: 2, 
+      label: "Level Two", 
+      status: (currentLayer === "LEVEL_TWO" || currentLayer === "LEVEL_TWO_EDIT") ? "active" : 
+              (["LEVEL_THREE", "COMPLETED"].includes(currentLayer) ? "completed" : "pending") 
+    },
+    { 
+      number: 3, 
+      label: "Level Three", 
+      status: currentLayer === "LEVEL_THREE" ? "active" : 
+              (currentLayer === "COMPLETED" ? "completed" : "pending") 
+    }
   ];
   
   var progressHtml = '<div class="progress-steps">';
@@ -378,166 +655,87 @@ function getProgressBar(currentLayer) {
   return progressHtml;
 }
 
-function getApprovalCodeFromLink(approvalLink) {
-  var match = approvalLink.match(/code=([^&]+)/);
-  return match ? match[1] : "N/A";
-}
-
-function getGMT7Time() {
-  var now = new Date();
-  var timeZone = "Asia/Jakarta";
-  var formattedDate = Utilities.formatDate(now, timeZone, "dd/MM/yyyy HH:mm:ss");
-  return formattedDate;
-}
-
 // ============================================
-// PART 2: WEB APP HANDLERS & APPROVAL FLOW
+// SEND BACK NOTIFICATION AFTER REJECTION
 // ============================================
 
-function showMultiLayerSummary(results, processedCount) {
-  if (processedCount > 0) {
-    var message = "Multi-Layer Approval Summary\n\nTotal processed: " + processedCount + "\n\n";
-    
-    var layerCount = {};
-    results.forEach(function(result) {
-      if (!layerCount[result.layer]) layerCount[result.layer] = 0;
-      layerCount[result.layer]++;
-    });
-    
-    for (var layer in layerCount) {
-      var layerName = getLayerDisplayName(layer);
-      message += layerName + " layer: " + layerCount[layer] + " emails\n";
+function sendSendBackNotification(recipientEmail, description, documentType, layer, rejectionNote, rejectorName) {
+  try {
+    if (!recipientEmail || recipientEmail.indexOf('@') === -1) {
+      Logger.log("Invalid email: " + recipientEmail);
+      return false;
     }
     
-    SpreadsheetApp.getUi().alert("Multi-Layer Approval Sent", message, SpreadsheetApp.getUi().ButtonSet.OK);
-  } else {
-    SpreadsheetApp.getUi().alert("No Action Needed", "No multi-layer approvals to send.", SpreadsheetApp.getUi().ButtonSet.OK);
+    var layerDisplayNames = {
+      "LEVEL_ONE": "Level One",
+      "LEVEL_TWO": "Level Two",
+      "LEVEL_THREE": "Level Three"
+    };
+    
+    var rejectedAtLayer = layerDisplayNames[layer] || layer;
+    var companyName = "Atreus Global";
+    
+    var subject = "📝 Document Revision Required - " + description;
+    
+    var htmlBody = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>📝 Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' + description + '</strong> has been rejected at <strong>' + rejectedAtLayer + '</strong> and sent back to you for revision.</p><div class="info-box"><p><strong>Project:</strong> ' + description + '</p><p><strong>Document Type:</strong> ' + documentType + '</p><p><strong>Rejected by:</strong> ' + (rejectorName || rejectedAtLayer + " Approver") + '</p><p><strong>Date:</strong> ' + getGMT7Time() + '</p></div><div class="rejection-box"><h3 style="color:#92400E;margin-top:0;">Rejection Feedback:</h3><p style="margin:0;color:#78350F;">' + rejectionNote.replace(/\n/g, '<br>') + '</p></div><p><strong>Next Steps:</strong></p><ol><li>Review the feedback above</li><li>Make necessary revisions to the document</li><li>Update the attachment link in the spreadsheet</li><li>Check the "Send" checkbox to resubmit for approval</li></ol><p style="color:#92400E;"><em>💡 The approval will automatically continue from where it was rejected after you resubmit.</em></p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' + new Date().getFullYear() + ' ' + companyName + '. All rights reserved.</p></div></div></body></html>';
+    
+    var plainBody = "DOCUMENT REVISION REQUIRED\n\n" +
+      "Project: " + description + "\n" +
+      "Document Type: " + documentType + "\n" +
+      "Rejected at: " + rejectedAtLayer + "\n" +
+      "Rejected by: " + (rejectorName || rejectedAtLayer + " Approver") + "\n" +
+      "Date: " + getGMT7Time() + "\n\n" +
+      "REJECTION FEEDBACK:\n" + rejectionNote + "\n\n" +
+      "NEXT STEPS:\n" +
+      "1. Review the feedback above\n" +
+      "2. Make necessary revisions\n" +
+      "3. Update the attachment link in the spreadsheet\n" +
+      "4. Check the 'Send' checkbox to resubmit\n\n" +
+      "This is an automated email from " + companyName + ".";
+    
+    MailApp.sendEmail({
+      to: recipientEmail,
+      subject: subject,
+      htmlBody: htmlBody,
+      body: plainBody
+    });
+    
+    Logger.log("✅ Send back notification sent to: " + recipientEmail);
+    return true;
+    
+  } catch (error) {
+    Logger.log("❌ Error sending send back notification: " + error.toString());
+    return false;
   }
 }
 
-function getLayerDisplayName(layerCode) {
-  var layerNames = {
-    "FIRST_LAYER": "First Layer",
-    "SECOND_LAYER": "Second Layer",
-    "THIRD_LAYER": "Third Layer"
-  };
-  return layerNames[layerCode] || layerCode;
-}
-
 function sendAdminNotification(message, subject) {
-  var ADMIN_EMAIL = "mhmdfdln14@gmail.com";
+  var ADMIN_EMAIL = "mhmdfdln14@gmail.com"; // Ganti dengan email admin lu
   try {
     MailApp.sendEmail({
       to: ADMIN_EMAIL,
       subject: subject || "Approval System Notification",
       body: message
     });
-    Logger.log("Admin notification sent to: " + ADMIN_EMAIL);
+    Logger.log("✅ Admin notification sent");
   } catch (error) {
-    Logger.log("Failed to send admin notification: " + error.toString());
-  }
-}
-
-function sendNextApprovalAfterFirstLayer() {
-  Logger.log("Checking for Second Layer approvals after First Layer...");
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
-  var processedCount = 0;
-
-  for (var i = 0; i < data.length; i++) {
-    var row = data[i];
-    var firstLayerStatus = row[7]; // Column H
-    var secondLayerStatus = row[8]; // Column I
-    var currentStatus = row[13]; // Column N
-
-    Logger.log("Row " + (i+2) + ": First=" + firstLayerStatus + ", Second=" + secondLayerStatus + ", Status=" + currentStatus);
-
-    if (firstLayerStatus === "APPROVED" && (!secondLayerStatus || secondLayerStatus === "" || secondLayerStatus === "PENDING") && currentStatus === "PROCESSING") {
-      Logger.log(" Found eligible for Second Layer approval: " + row[0]);
-
-      var secondLayerEmail = row[11]; // Column L
-      var name = row[0];
-      var email = row[1];
-      var description = row[2];
-      var documentType = row[3];
-      var attachment = row[4];
-
-      if (secondLayerEmail) {
-        var validationResult = validateGoogleDriveAttachmentWithType(attachment, documentType);
-        var approvalLink = generateMultiLayerApprovalLink(name, email, description, documentType, attachment, "SECOND_LAYER");
-        var emailSent = sendMultiLayerEmail(secondLayerEmail, description, documentType, attachment, approvalLink, "SECOND_LAYER", validationResult);
-
-        if (emailSent) {
-          sheet.getRange(i + 2, 7).setNote("SECOND_LAYER_APPROVAL_SENT: " + new Date());
-          Logger.log(" Second Layer approval email sent to: " + secondLayerEmail);
-          processedCount++;
-          Utilities.sleep(1000);
-        }
-      }
-    }
-  }
-
-  if (processedCount > 0) {
-    Logger.log("3 daysSuccessfully sent " + processedCount + " Second Layer approval emails!");
-  } else {
-    Logger.log("No pending Second Layer approvals found");
-  }
-}
-
-function sendNextApprovalAfterSecondLayer() {
-  Logger.log("Checking for Third Layer approvals after Second Layer...");
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
-  var processedCount = 0;
-
-  for (var i = 0; i < data.length; i++) {
-    var row = data[i];
-    var secondLayerStatus = row[8]; // Column I
-    var thirdLayerStatus = row[9]; // Column J
-    var currentStatus = row[13]; // Column N
-
-    Logger.log("Row " + (i+2) + ": Second=" + secondLayerStatus + ", Third=" + thirdLayerStatus + ", Status=" + currentStatus);
-
-    if (secondLayerStatus === "APPROVED" && (!thirdLayerStatus || thirdLayerStatus === "" || thirdLayerStatus === "PENDING") && currentStatus === "PROCESSING") {
-      Logger.log(" Found eligible for Third Layer approval: " + row[0]);
-
-      var thirdLayerEmail = row[12]; // Column M
-      var name = row[0];
-      var email = row[1];
-      var description = row[2];
-      var documentType = row[3];
-      var attachment = row[4];
-
-      if (thirdLayerEmail) {
-        var validationResult = validateGoogleDriveAttachmentWithType(attachment, documentType);
-        var approvalLink = generateMultiLayerApprovalLink(name, email, description, documentType, attachment, "THIRD_LAYER");
-        var emailSent = sendMultiLayerEmail(thirdLayerEmail, description, documentType, attachment, approvalLink, "THIRD_LAYER", validationResult);
-
-        if (emailSent) {
-          sheet.getRange(i + 2, 7).setNote("THIRD_LAYER_APPROVAL_SENT: " + new Date());
-          Logger.log(" Third Layer approval email sent to: " + thirdLayerEmail);
-          processedCount++;
-          Utilities.sleep(1000);
-        }
-      }
-    }
-  }
-
-  if (processedCount > 0) {
-    Logger.log("3 daysSuccessfully sent " + processedCount + " Third Layer approval emails!");
-  } else {
-    Logger.log("No pending Third Layer approvals found");
+    Logger.log("❌ Failed to send admin notification: " + error.toString());
   }
 }
 
 // ============================================
-// WEB APP HANDLERS
+// PART 3: WEB APP HANDLERS (APPROVAL & REJECTION)
+// Multi-Layer Reusable Approval System
+// ============================================
+
+// ============================================
+// WEB APP ENTRY POINTS
 // ============================================
 
 function doGet(e) {
   try {
     Logger.log("Web App accessed");
-    Logger.log("e.parameter: " + JSON.stringify(e.parameter));
+    Logger.log("Parameters: " + JSON.stringify(e.parameter));
     
     var params = e.parameter || {};
     var action = params.action;
@@ -546,6 +744,9 @@ function doGet(e) {
       return handleMultiLayerApproval(params);
     } else if (action === "reject") {
       return handleMultiLayerRejection(params);
+    } else if (action === "submit_rejection") {
+      // Handle rejection submission via GET
+      return handleRejectionSubmission(params);
     } else if (action === "rejection_success") {
       return showRejectionSuccessPage(params);
     }
@@ -553,14 +754,52 @@ function doGet(e) {
     return createErrorPage("Invalid request - missing action parameter");
     
   } catch (error) {
-    Logger.log("Error in doGet: " + error.toString());
+    Logger.log("❌ Error in doGet: " + error.toString());
     return createErrorPage("System error: " + error.message);
   }
 }
 
+function doPost(e) {
+  try {
+    Logger.log("POST request received");
+    
+    var params = {};
+    
+    if (e.postData && e.postData.contents) {
+      var contents = e.postData.contents;
+      var formData = contents.split('&');
+      
+      for (var i = 0; i < formData.length; i++) {
+        var pair = formData[i].split('=');
+        if (pair.length === 2) {
+          params[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1].replace(/\+/g, ' '));
+        }
+      }
+    }
+    
+    Logger.log("Processed POST params: " + JSON.stringify(params));
+    
+    var action = params.action;
+
+    if (action === "submit_rejection") {
+      return handleRejectionSubmission(params);
+    }
+
+    return createErrorPage("Invalid POST request");
+
+  } catch (error) {
+    Logger.log("❌ Error in doPost: " + error.toString());
+    return createErrorPage("System error: " + error.message);
+  }
+}
+
+// ============================================
+// APPROVAL HANDLER
+// ============================================
+
 function handleMultiLayerApproval(params) {
   try {
-    Logger.log("Approval request received");
+    Logger.log("=== APPROVAL REQUEST RECEIVED ===");
     
     var name = params.name ? decodeURIComponent(params.name) : "";
     var email = params.email ? decodeURIComponent(params.email) : "";
@@ -571,494 +810,415 @@ function handleMultiLayerApproval(params) {
     var code = params.code || "";
     var timestamp = parseInt(params.timestamp) || 0;
     
+    Logger.log("Approving: " + project + " at " + layer);
+    
+    // Check link expiration (7 days)
     var now = new Date().getTime();
-    var sevenDaysAgo = now - (7 * 24 * 60 * 90 * 1000);
+    var sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
     if (timestamp < sevenDaysAgo) {
-      return createErrorPage("Approval link has expired (3 days). Please request a new one.");
+      return createErrorPage("Approval link has expired (7 days). Please request a new one.");
     }
     
-    if (!name || !email || !project || !layer) {
+    if (!project || !layer) {
       return createErrorPage("Missing required approval data");
     }
     
+    // Update approval status
     var updated = updateMultiLayerApprovalStatus(name, email, project, layer, code);
     
     if (updated) {
-      Logger.log(" Approval updated successfully");
+      Logger.log("✅ Approval updated successfully");
       
+      // Auto-trigger next layer approval
       try {
-        if (layer === "FIRST_LAYER") {
-          Utilities.sleep(3000);
-          sendNextApprovalAfterFirstLayer();
-        } else if (layer === "SECOND_LAYER") {
-          Utilities.sleep(3000);
-          sendNextApprovalAfterSecondLayer();
+        if (layer === "LEVEL_ONE") {
+          Utilities.sleep(2000);
+          sendNextApprovalAfterLevelOne();
+        } else if (layer === "LEVEL_TWO") {
+          Utilities.sleep(2000);
+          sendNextApprovalAfterLevelTwo();
         }
       } catch (nextError) {
-        Logger.log("Warning: Next approval trigger failed: " + nextError.toString());
+        Logger.log("⚠️ Next approval trigger failed: " + nextError.toString());
       }
       
       return createSuccessPage(name, email, project, documentType, attachment, layer, code);
     } else {
-      return createErrorPage("Approval failed - data not found or already approved");
+      return createErrorPage("Approval failed - data not found or already processed");
     }
     
   } catch (error) {
-    Logger.log("Error in handleMultiLayerApproval: " + error.toString());
+    Logger.log("❌ Error in handleMultiLayerApproval: " + error.toString());
     return createErrorPage("System error during approval: " + error.message);
   }
 }
+
+// ============================================
+// UPDATE APPROVAL STATUS (CORE LOGIC)
+// ============================================
 
 function updateMultiLayerApprovalStatus(name, email, project, layer, code) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      return false;
-    }
+    if (lastRow < 2) return false;
     
-    var data = sheet.getRange("A2:N" + lastRow).getValues();
+    var data = sheet.getRange("A2:O" + lastRow).getValues();
     
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
       var rowName = row[0];
       var rowEmail = row[1];
       var rowProject = row[2];
-      var rowStatus = row[13]; // Column N - Status
+      var rowStatus = row[14]; // Column O - Overall Status
       
-      // Skip empty rows
       if (!rowName && !rowEmail && !rowProject) continue;
       
-      // FIXED: SUPER STRICT MATCHING - harus exact match semua field yang ada
-      var nameMatch = rowName && name && 
-                     rowName.toString().trim().toLowerCase() === name.toString().trim().toLowerCase();
-      
-      var emailMatch = rowEmail && email && 
-                      rowEmail.toString().trim().toLowerCase() === email.toString().trim().toLowerCase();
-      
+      // STRICT MATCHING
       var projectMatch = rowProject && project && 
                         rowProject.toString().trim().toLowerCase() === project.toString().trim().toLowerCase();
       
-      // FIXED: Hanya proses row yang statusnya PROCESSING/ACTIVE dan layer yang sesuai masih PENDING
-      var isEligibleForUpdate = (rowStatus === "PROCESSING" || rowStatus === "ACTIVE");
+      var isEligible = (rowStatus === "PROCESSING" || rowStatus === "ACTIVE");
       
-      // Check layer status - hanya proses jika layer tersebut masih PENDING
-      var layerColumn = getLayerColumnIndex(layer);
-      var currentLayerStatus = layerColumn !== -1 ? sheet.getRange(i + 2, layerColumn).getValue() : "";
-      var isLayerPending = (!currentLayerStatus || currentLayerStatus === "" || currentLayerStatus === "PENDING");
-      
-      // FIXED: HARUS MATCH SEMUA 3 FIELD + ELIGIBLE + LAYER PENDING
-      if (nameMatch && emailMatch && projectMatch && isEligibleForUpdate && isLayerPending) {
-        Logger.log("✅ EXACT MATCH FOUND at row " + (i + 2));
-        Logger.log("   Name: '" + rowName + "' = '" + name + "'");
-        Logger.log("   Email: '" + rowEmail + "' = '" + email + "'");
-        Logger.log("   Project: '" + rowProject + "' = '" + project + "'");
-        Logger.log("   Status: " + rowStatus + ", Layer Status: " + currentLayerStatus);
+      if (projectMatch && isEligible) {
+        Logger.log("✅ MATCH FOUND at row " + (i + 2));
         
         var columnIndex = getLayerColumnIndex(layer);
-        if (columnIndex !== -1) {
-          var currentStatus = sheet.getRange(i + 2, columnIndex).getValue();
-          if (currentStatus === "APPROVED" || currentStatus === "REJECTED") {
-            Logger.log("⚠️ Layer already processed - skipping");
-            return false;
-          }
-          
-          // UPDATE THE CORRECT ROW
-          sheet.getRange(i + 2, columnIndex).setValue("APPROVED");
-          sheet.getRange(i + 2, columnIndex).setBackground("#90EE90");
-          sheet.getRange(i + 2, columnIndex).setNote("Approved by " + getLayerDisplayName(layer) + " - " + getGMT7Time() + " - Code: " + code);
-          
-          // Check if all layers are approved
-          var firstLayerStatus = sheet.getRange(i + 2, 8).getValue(); // Column H
-          var secondLayerStatus = sheet.getRange(i + 2, 9).getValue(); // Column I
-          var thirdLayerStatus = sheet.getRange(i + 2, 10).getValue(); // Column J
-
-          if (firstLayerStatus === "APPROVED" && secondLayerStatus === "APPROVED" && thirdLayerStatus === "APPROVED") {
-            sheet.getRange(i + 2, 14).setValue("COMPLETED"); // Column N
-            sheet.getRange(i + 2, 14).setBackground("#90EE90");
-            Logger.log("✅ All layers approved - marked as COMPLETED");
-          }
-          
-          return true;
+        if (columnIndex === -1) {
+          Logger.log("❌ Invalid layer: " + layer);
+          return false;
         }
+        
+        var currentStatus = sheet.getRange(i + 2, columnIndex).getValue();
+        
+        // Prevent double approval
+        if (currentStatus === "APPROVED") {
+          Logger.log("⚠️ Already approved - skipping");
+          return false;
+        }
+        
+        // SET APPROVED
+        sheet.getRange(i + 2, columnIndex).setValue("APPROVED");
+        sheet.getRange(i + 2, columnIndex).setBackground("#90EE90");
+        sheet.getRange(i + 2, columnIndex).setNote("Approved by " + getLayerDisplayName(layer) + " - " + getGMT7Time() + " - Code: " + code);
+        
+        // Clear "Current Editor" field
+        sheet.getRange(i + 2, 14).setValue(""); // Column N - Current Editor
+        
+        // Check if all layers approved
+        var levelOneStatus = sheet.getRange(i + 2, 8).getValue(); // Column H
+        var levelTwoStatus = sheet.getRange(i + 2, 9).getValue(); // Column I
+        var levelThreeStatus = sheet.getRange(i + 2, 10).getValue(); // Column J
+        
+        if (levelOneStatus === "APPROVED" && levelTwoStatus === "APPROVED" && levelThreeStatus === "APPROVED") {
+          sheet.getRange(i + 2, 15).setValue("COMPLETED"); // Column O
+          sheet.getRange(i + 2, 15).setBackground("#90EE90");
+          Logger.log("🎉 ALL LAYERS APPROVED - COMPLETED");
+        } else {
+          sheet.getRange(i + 2, 15).setValue("PROCESSING");
+          sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
+        }
+        
+        Logger.log("✅ Approval recorded for: " + layer);
+        return true;
       }
     }
     
-    Logger.log("❌ No exact matching data found");
-    Logger.log("   Searching for: Name='" + name + "', Email='" + email + "', Project='" + project + "'");
-    
-    // FIXED: FALLBACK - coba dengan matching yang sedikit lebih longgar tapi masih strict
-    return fallbackStrictMatch(sheet, data, name, email, project, layer, code, "APPROVED");
+    Logger.log("❌ No matching data found");
+    return false;
     
   } catch (error) {
-    Logger.log("❌ Error updating status: " + error.toString());
+    Logger.log("❌ Error updating approval status: " + error.toString());
     return false;
   }
 }
 
-// NEW FUNCTION: Fallback matching yang masih strict
-function fallbackStrictMatch(sheet, data, name, email, project, layer, code, action) {
-  Logger.log("🔄 Trying fallback strict matching...");
-  
-  for (var i = 0; i < data.length; i++) {
-    var row = data[i];
-    var rowName = row[0];
-    var rowEmail = row[1];
-    var rowProject = row[2];
-    var rowStatus = row[13];
-    
-    if (!rowName && !rowEmail && !rowProject) continue;
-    
-    // FALLBACK: Project harus exact match + salah satu dari name/email match
-    var nameMatch = rowName && name && 
-                   rowName.toString().trim().toLowerCase() === name.toString().trim().toLowerCase();
-    
-    var emailMatch = rowEmail && email && 
-                    rowEmail.toString().trim().toLowerCase() === email.toString().trim().toLowerCase();
-    
-    var projectMatch = rowProject && project && 
-                      rowProject.toString().trim().toLowerCase() === project.toString().trim().toLowerCase();
-    
-    var isEligibleForUpdate = (rowStatus === "PROCESSING" || rowStatus === "ACTIVE");
-    
-    // Check layer status
-    var layerColumn = getLayerColumnIndex(layer);
-    var currentLayerStatus = layerColumn !== -1 ? sheet.getRange(i + 2, layerColumn).getValue() : "";
-    var isLayerPending = (!currentLayerStatus || currentLayerStatus === "" || currentLayerStatus === "PENDING");
-    
-    // FALLBACK: Project exact match + (name match ATAU email match) + eligible + layer pending
-    if (projectMatch && isEligibleForUpdate && isLayerPending && (nameMatch || emailMatch)) {
-      Logger.log("✅ FALLBACK MATCH FOUND at row " + (i + 2));
-      Logger.log("   Project exact match + " + (nameMatch ? "Name match" : "Email match"));
-      
-      var columnIndex = getLayerColumnIndex(layer);
-      if (columnIndex !== -1) {
-        var currentStatus = sheet.getRange(i + 2, columnIndex).getValue();
-        if (currentStatus === "APPROVED" || currentStatus === "REJECTED") {
-          Logger.log("⚠️ Layer already processed - skipping");
-          return false;
-        }
-        
-        if (action === "APPROVED") {
-          sheet.getRange(i + 2, columnIndex).setValue("APPROVED");
-          sheet.getRange(i + 2, columnIndex).setBackground("#90EE90");
-          sheet.getRange(i + 2, columnIndex).setNote("Approved by " + getLayerDisplayName(layer) + " - " + getGMT7Time() + " - Code: " + code);
-        } else {
-          sheet.getRange(i + 2, columnIndex).setValue("REJECTED");
-          sheet.getRange(i + 2, columnIndex).setBackground("#FF6B6B");
-          sheet.getRange(i + 2, columnIndex).setNote("Rejected by " + getLayerDisplayName(layer) + " - " + getGMT7Time() + " - Code: " + code);
-        }
-        
-        return true;
-      }
-    }
-  }
-  
-  Logger.log("❌ No fallback match found either");
-  return false;
-}
-
 function getLayerColumnIndex(layer) {
   var layerColumns = {
-    "FIRST_LAYER": 8,  // Column H
-    "SECOND_LAYER": 9, // Column I
-    "THIRD_LAYER": 10  // Column J
+    "LEVEL_ONE": 8,       // Column H
+    "LEVEL_TWO": 9,       // Column I
+    "LEVEL_THREE": 10,    // Column J
+    "LEVEL_ONE_EDIT": 8,  // Same as LEVEL_ONE (for resubmit)
+    "LEVEL_TWO_EDIT": 9   // Same as LEVEL_TWO (for resubmit)
   };
   return layerColumns[layer] || -1;
 }
 
 // ============================================
-// REJECTION HANDLING
-// ============================================
-
-function doPost(e) {
-  try {
-    Logger.log("POST request received for rejection");
-    
-    var params = {};
-    
-    // Handle form data properly
-    if (e.postData && e.postData.contents) {
-      var contents = e.postData.contents;
-      Logger.log("Raw POST data: " + contents);
-      
-      // Parse form data
-      var formData = contents.split('&');
-      for (var i = 0; i < formData.length; i++) {
-        var pair = formData[i].split('=');
-        if (pair.length === 2) {
-          params[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
-        }
-      }
-    }
-    
-    Logger.log("Processed POST params: " + JSON.stringify(params));
-    
-    var action = params.action;
-    Logger.log("POST action: " + action);
-
-    if (action === "submit_rejection") {
-      return handleRejectionSubmission(params);
-    }
-
-    return createErrorPage("Invalid POST request");
-
-  } catch (error) {
-    Logger.log("Error in doPost: " + error.toString());
-    return createErrorPage("System error: " + error.message);
-  }
-}
-
-// ============================================
-// FIXED REJECTION FUNCTIONS
+// REJECTION HANDLER
 // ============================================
 
 function handleMultiLayerRejection(params) {
   try {
-    Logger.log("Rejection request received");
-    Logger.log("All rejection params: " + JSON.stringify(params));
+    Logger.log("=== REJECTION REQUEST RECEIVED ===");
 
-    // FIXED: Safe parameter extraction with better decoding
-    var name = params.name ? decodeURIComponent(params.name) : (params.name || "");
-    var email = params.email ? decodeURIComponent(params.email) : (params.email || "");
-    var project = params.project ? decodeURIComponent(params.project) : (params.project || "");
-    var documentType = params.docType ? decodeURIComponent(params.docType) : (params.docType || "");
-    var attachment = params.attachment ? decodeURIComponent(params.attachment) : (params.attachment || "");
-    var layer = params.layer ? decodeURIComponent(params.layer) : (params.layer || "");
+    var name = params.name ? decodeURIComponent(params.name) : "";
+    var email = params.email ? decodeURIComponent(params.email) : "";
+    var project = params.project ? decodeURIComponent(params.project) : "";
+    var documentType = params.docType ? decodeURIComponent(params.docType) : "";
+    var attachment = params.attachment ? decodeURIComponent(params.attachment) : "";
+    var layer = params.layer ? decodeURIComponent(params.layer) : "";
     var code = params.code || "";
     var timestamp = parseInt(params.timestamp) || 0;
 
-    // FIXED: Debug logging untuk semua parameter
-    Logger.log("Rejection Parameter Debug:");
-    Logger.log("Name: '" + name + "'");
-    Logger.log("Email: '" + email + "'");
-    Logger.log("Project: '" + project + "'");
-    Logger.log("Layer: '" + layer + "'");
-    Logger.log("DocumentType: '" + documentType + "'");
-    Logger.log("Attachment: '" + attachment + "'");
-    Logger.log("Code: '" + code + "'");
+    Logger.log("Rejection for: " + project + " at " + layer);
 
-    // FIXED: Check link expiration
+    // Check expiration
     var now = new Date().getTime();
     var sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
     if (timestamp < sevenDaysAgo) {
       return createErrorPage("Rejection link has expired (7 days). Please request a new one.");
     }
 
-    // FIXED: More flexible validation - cari data dari spreadsheet jika parameter kosong
-    if (!name || !project || !layer) {
-      Logger.log("Missing parameters, trying to find data from spreadsheet...");
-      
-      // Coba cari data dari spreadsheet berdasarkan parameter yang ada
-      var foundData = findRejectionDataFromSpreadsheet(email, project, layer);
-      if (foundData) {
-        name = foundData.name;
-        project = foundData.project;
-        layer = foundData.layer;
-        email = foundData.email;
-        Logger.log("Data found in spreadsheet: " + name + " - " + project);
-      } else {
-        var missingFields = [];
-        if (!name) missingFields.push("name");
-        if (!project) missingFields.push("project"); 
-        if (!layer) missingFields.push("layer");
-        
-        Logger.log("Missing fields after search: " + missingFields.join(", "));
-        return createErrorPage("Cannot process rejection: Missing " + missingFields.join(", ") + ". Please use the original approval link from email.");
-      }
+    if (!project || !layer) {
+      return createErrorPage("Missing required rejection data");
     }
 
-    // FIXED: Create rejection form dengan data yang sudah diverifikasi
     return createRejectionForm(name, email, project, documentType, attachment, layer, code);
 
   } catch (error) {
-    Logger.log("Error in handleMultiLayerRejection: " + error.toString());
+    Logger.log("❌ Error in handleMultiLayerRejection: " + error.toString());
     return createErrorPage("System error during rejection: " + error.message);
   }
 }
 
-// NEW FUNCTION: Cari data dari spreadsheet jika parameter kosong
-function findRejectionDataFromSpreadsheet(email, project, layer) {
+function handleRejectionSubmission(params) {
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
+    Logger.log("=== REJECTION SUBMISSION RECEIVED ===");
     
-    for (var i = 0; i < data.length; i++) {
-      var row = data[i];
-      var rowEmail = row[1]; // Column B
-      var rowProject = row[2]; // Column C
-      var rowStatus = row[13]; // Column N - Status
-      
-      // FIXED: SUPER STRICT MATCHING
-      var emailMatch = rowEmail && email && 
-                      rowEmail.toString().trim().toLowerCase() === email.toString().trim().toLowerCase();
-      var projectMatch = rowProject && project && 
-                        rowProject.toString().trim().toLowerCase() === project.toString().trim().toLowerCase();
-      var isEligible = (rowStatus === "PROCESSING" || rowStatus === "ACTIVE");
-      
-      if (emailMatch && projectMatch && isEligible) {
-        Logger.log("✅ Found exact matching data in row " + (i + 2));
-        return {
-          name: row[0], // Column A
-          email: row[1], // Column B
-          project: row[2], // Column C
-          layer: layer,
-          documentType: row[3], // Column D
-          attachment: row[4] // Column E
-        };
-      }
+    var name = params.name || "";
+    var email = params.email || "";
+    var project = params.project || "";
+    var documentType = params.docType || "";
+    var attachment = params.attachment || "";
+    var layer = params.layer || "";
+    var code = params.code || "";
+    var rejectionNote = params.rejectionNote || "";
+
+    Logger.log("Processing rejection: " + project + " at " + layer);
+
+    if (!rejectionNote || rejectionNote.trim() === "") {
+      return createErrorPage("Rejection note is required.");
     }
-    
-    Logger.log("❌ No exact matching data found in spreadsheet");
-    return null;
-    
+
+    // Update spreadsheet with rejection
+    var updated = updateMultiLayerRejectionStatus(name, email, project, layer, code, rejectionNote);
+
+    if (updated) {
+      Logger.log("✅ Rejection recorded successfully");
+
+      // Send notification ke yang harus edit
+      try {
+        sendRejectionAndSendBackNotifications(name, email, project, documentType, attachment, layer, rejectionNote);
+      } catch (notifyError) {
+        Logger.log("⚠️ Notification failed: " + notifyError.toString());
+      }
+
+      return createRejectionSuccessPage(name, email, project, documentType, attachment, layer, rejectionNote);
+      
+    } else {
+      Logger.log("❌ Rejection failed");
+      return createErrorPage("Rejection failed - data not found in spreadsheet");
+    }
+
   } catch (error) {
-    Logger.log("❌ Error finding rejection data: " + error.toString());
-    return null;
+    Logger.log("❌ Error in handleRejectionSubmission: " + error.toString());
+    return createErrorPage("System error during rejection: " + error.message);
   }
 }
 
-// NEW FUNCTION: Get layer status from row
-function getLayerStatusFromRow(row, layer) {
-  if (layer === "FIRST_LAYER") return row[7]; // Column H
-  if (layer === "SECOND_LAYER") return row[8]; // Column I
-  if (layer === "THIRD_LAYER") return row[9]; // Column J
-  return "";
-}
+// ============================================
+// UPDATE REJECTION STATUS (CORE LOGIC - REUSABLE)
+// ============================================
 
-// FIXED: Update juga function generateMultiLayerApprovalLink untuk rejection
-function generateMultiLayerApprovalLink(name, email, description, documentType, attachment, layer, action) {
-  var webAppUrl = "https://script.google.com/macros/s/AKfycbwet_AfptilcSFOJcL1Cas61Pxn8Yy8KnvoDwW5uyG_qEE6upJSKiSl92ek0jfA_PBA/exec";
-
-  var timestamp = new Date().getTime().toString(36);
-  var nameCode = name ? name.substring(0, 3).toLowerCase() : "usr";
-  var projectCode = description ? description.replace(/[^a-zA-Z0-9]/g, "").substring(0, 3).toLowerCase() : "prj";
-  var uniqueCode = nameCode + projectCode + timestamp;
-
-  // FIXED: Pastikan semua parameter ada dan properly encoded
-  var params = {
-    action: action || "approve",
-    name: encodeURIComponent(name || "Unknown"),
-    email: encodeURIComponent(email || "unknown@atreusg.com"),
-    project: encodeURIComponent(description || "Unknown Project"),
-    docType: encodeURIComponent(documentType || ""),
-    attachment: encodeURIComponent(attachment || ""),
-    layer: layer,
-    code: uniqueCode,
-    timestamp: new Date().getTime()
-  };
-
-  // FIXED: Debug logging untuk link generation
-  Logger.log("Generated " + (action || "approve") + " link for: " + name + " - " + description);
-  Logger.log("Link params: " + JSON.stringify(params));
-
-  var queryString = Object.keys(params)
-    .map(key => key + '=' + params[key])
-    .join('&');
-
-  return webAppUrl + "?" + queryString;
-}
-
-// FIXED: Update juga di email function untuk rejection link
-function sendMultiLayerEmail(recipientEmail, description, documentType, attachment, approvalLink, layer, validationResult) {
+function updateMultiLayerRejectionStatus(name, email, project, layer, code, rejectionNote) {
   try {
-    if (!recipientEmail || recipientEmail.indexOf('@') === -1) {
-      Logger.log("Invalid email: " + recipientEmail);
-      return false;
-    }
-    
-    var layerDisplayNames = {
-      "FIRST_LAYER": "First Layer",
-      "SECOND_LAYER": "Second Layer",
-      "THIRD_LAYER": "Third Layer"
-    };
-    
-    var layerDisplay = layerDisplayNames[layer] || layer;
-    var companyName = "Atreus Global";
-    
-    var subject = "Approval Request - " + description + " [" + layerDisplay + " Layer]";
-    
-    var docTypeBadge = "";
-    if (documentType && documentType !== "") {
-      var docTypeColors = {
-        "ICC": "#3B82F6",
-        "Quotation": "#10B981",
-        "Proposal": "#F59E0B"
-      };
-      var badgeColor = docTypeColors[documentType] || "#6B7280";
-      docTypeBadge = '<div style="display: inline-block; background: ' + badgeColor + '; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-bottom: 10px;">' + documentType + '</div>';
-    }
-    
-    var attachmentSection = "";
-    if (attachment && attachment !== "") {
-      if (validationResult.valid) {
-        var driveTypeInfo = validationResult.isSharedDrive ? 
-          '<p><strong>Location:</strong> <span style="color: #3B82F6;">📁 Shared Drive</span></p>' :
-          '<p><strong>Location:</strong> My Drive</p>';
-        
-        attachmentSection = '<div class="attachment-box" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f2ff 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #90EE90;"><h3 style="color: #2E8B57;">Attachment (Validated)</h3>' + docTypeBadge + '<p><strong>File:</strong> ' + validationResult.name + '</p><p><strong>Type:</strong> ' + validationResult.type + '</p><p><strong>Size:</strong> ' + validationResult.sizeFormatted + '</p>' + driveTypeInfo + '<p><strong>Status:</strong> <span style="color: #2E8B57;">' + validationResult.message + '</span></p><p><a href="' + attachment + '" target="_blank" style="color: #326BC6;">View Document</a></p></div>';
-      } else {
-        attachmentSection = '<div class="attachment-box" style="background: linear-gradient(135deg, #fff0f0 0%, #ffe6e6 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #FF6B6B;"><h3 style="color: #DC143C;">Attachment (Validation Failed)</h3>' + docTypeBadge + '<p><strong>Status:</strong> <span style="color: #DC143C;">' + validationResult.message + '</span></p><p><a href="' + attachment + '" target="_blank" style="color: #326BC6;">Check Link</a></p><p style="font-size: 12px; color: #666;"><em>Please ensure the Google Drive link is correct and accessible</em></p></div>';
-      }
-    }
-    
-    var progressBar = getProgressBar(layer);
-    
-    // FIXED: Generate rejection link dengan parameter yang sama seperti approval
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
-    
-    // Cari data yang sesuai untuk rejection link
-    var rejectionName = "Unknown";
-    var rejectionEmail = "unknown@atreusg.com";
-    
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return false;
+
+    var data = sheet.getRange("A2:O" + lastRow).getValues();
+
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
-      if (row[2] === description) { // Match berdasarkan project description
-        rejectionName = row[0] || "Unknown";
-        rejectionEmail = row[1] || "unknown@atreusg.com";
-        break;
+      var rowProject = row[2];
+      var rowStatus = row[14]; // Column O
+
+      if (!rowProject) continue;
+
+      var projectMatch = rowProject.toString().trim().toLowerCase() === project.toString().trim().toLowerCase();
+      var isEligible = (rowStatus === "PROCESSING" || rowStatus === "ACTIVE");
+
+      if (projectMatch && isEligible) {
+        Logger.log("✅ MATCH FOUND at row " + (i + 2) + " for rejection");
+
+        var columnIndex = getLayerColumnIndex(layer);
+        if (columnIndex === -1) return false;
+
+        // Check current status
+        var currentStatus = sheet.getRange(i + 2, columnIndex).getValue();
+        if (currentStatus === "REJECTED") {
+          Logger.log("⚠️ Already rejected - skipping");
+          return false;
+        }
+
+        // SET REJECTED and clear next levels
+        sheet.getRange(i + 2, columnIndex).setValue("REJECTED");
+        sheet.getRange(i + 2, columnIndex).setBackground("#FF6B6B");
+        sheet.getRange(i + 2, columnIndex).setNote("Rejected by " + getLayerDisplayName(layer) + " - " + getGMT7Time() + "\nReason: " + rejectionNote);
+
+        // Reset next levels to PENDING
+        if (layer === "LEVEL_ONE") {
+          // Clear Level Two and Three
+          sheet.getRange(i + 2, 9).setValue("PENDING"); // Level Two
+          sheet.getRange(i + 2, 9).setBackground(null);
+          sheet.getRange(i + 2, 10).setValue("PENDING"); // Level Three
+          sheet.getRange(i + 2, 10).setBackground(null);
+        } else if (layer === "LEVEL_TWO") {
+          // Clear Level Three
+          sheet.getRange(i + 2, 10).setValue("PENDING"); // Level Three
+          sheet.getRange(i + 2, 10).setBackground(null);
+        }
+
+        // SEND BACK LOGIC with enhanced status handling
+        if (layer === "LEVEL_ONE") {
+          // Rejected at Level One -> send back to REQUESTER
+          sheet.getRange(i + 2, 14).setValue("REQUESTER"); // Column N - Current Editor
+          sheet.getRange(i + 2, 15).setValue("EDITING"); // Column O - Overall Status
+          sheet.getRange(i + 2, 15).setBackground("#FFE0B2");
+          sheet.getRange(i + 2, 8).setValue("REJECTED"); // Ensure Level One shows REJECTED
+          sheet.getRange(i + 2, 8).setBackground("#FF6B6B");
+          
+        } else if (layer === "LEVEL_TWO") {
+          // Rejected at Level Two -> send back to LEVEL ONE
+          sheet.getRange(i + 2, 14).setValue("LEVEL_ONE"); // Column N - Current Editor
+          sheet.getRange(i + 2, 15).setValue("EDITING"); // Column O - Overall Status
+          sheet.getRange(i + 2, 15).setBackground("#FFE0B2");
+          sheet.getRange(i + 2, 9).setValue("REJECTED"); // Ensure Level Two shows REJECTED
+          sheet.getRange(i + 2, 9).setBackground("#FF6B6B");
+          sheet.getRange(i + 2, 8).setValue("EDITING"); // Set Level One to EDITING
+          sheet.getRange(i + 2, 8).setBackground("#FFE0B2");
+          
+        } else if (layer === "LEVEL_THREE") {
+          // Rejected at Level Three -> send back to LEVEL TWO
+          sheet.getRange(i + 2, 14).setValue("LEVEL_TWO"); // Column N - Current Editor
+          sheet.getRange(i + 2, 15).setValue("EDITING"); // Column O - Overall Status
+          sheet.getRange(i + 2, 15).setBackground("#FFE0B2");
+          sheet.getRange(i + 2, 10).setValue("REJECTED"); // Ensure Level Three shows REJECTED
+          sheet.getRange(i + 2, 10).setBackground("#FF6B6B");
+          sheet.getRange(i + 2, 9).setValue("EDITING"); // Set Level Two to EDITING
+          sheet.getRange(i + 2, 9).setBackground("#FFE0B2");
+        }
+
+        Logger.log("✅ Rejection recorded - sent back to: " + sendBackTo);
+        
+        // Store info untuk notification
+        row.sendBackTo = sendBackTo;
+        row.rowIndex = i + 2;
+        
+        return row; // Return row data untuk notification
       }
     }
-    
-    var rejectLink = generateMultiLayerApprovalLink(rejectionName, rejectionEmail, description, documentType, attachment, layer, "reject");
-    
-    Logger.log("Rejection link generated for: " + rejectionName + " - " + description);
-    
-    var htmlBody = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#326BC6 0%,#183460 100%);padding:30px;text-align:center;color:white}.progress-track{background:#f8f9fa;padding:30px 20px;margin:0}.progress-steps{display:flex;justify-content:center;align-items:center;gap:40px;position:relative}.progress-step{text-align:center;position:relative}.step-number{width:40px;height:40px;border-radius:50%;margin:0 auto 8px;font-weight:600;display:flex;align-items:center;justify-content:center;font-size:16px}.step-active{background:#326BC6;color:white}.step-completed{background:#90EE90;color:#333}.step-pending{background:#e0e0e0;color:#666}.step-label{font-size:12px;font-weight:500}.content{padding:30px}.button{display:inline-block;padding:15px 30px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);color:white !important;text-decoration:none;border-radius:8px;margin:20px 10px;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:all 0.3s ease}.button:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(50,107,198,0.3)}.button-reject{background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);color:white !important;text-decoration:none;border-radius:8px;margin:20px 10px;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:all 0.3s ease}.button-reject:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(220,38,38,0.3)}.button-container{text-align:center;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #326BC6}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>Multi-Layer Approval Required</h1><p>Current Stage: ' + layerDisplay + ' Approval</p></div><div class="progress-track">' + progressBar + '</div><div class="content"><p>Hello,</p><p>This project requires your approval at the <strong>' + layerDisplay + '</strong> level:</p><div class="info-box"><h3>' + description + '</h3><p><strong>Current Stage:</strong> ' + layerDisplay + ' Approval</p><p><strong>Date:</strong> ' + getGMT7Time() + '</p></div>' + attachmentSection + '<p>Please choose your decision:</p><div class="button-container"><a href="' + approvalLink + '" class="button" style="color: white !important;">APPROVE AS ' + layerDisplay + '</a><a href="' + rejectLink + '" class="button-reject" style="color: white !important;">REJECT WITH NOTE</a></div><p style="text-align: center; font-size: 12px; color: #666;"><em>Approval Code: ' + getApprovalCodeFromLink(approvalLink) + ' | Link expires in 7 days</em></p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' + new Date().getFullYear() + ' ' + companyName + '. All rights reserved.</p></div></div></body></html>';
-    
-    var plainBody = "MULTI-LAYER APPROVAL REQUEST\n\nProject: " + description + "\nDocument Type: " + documentType + "\nCurrent Stage: " + layerDisplay + " Approval\n\n";
-    
-    if (attachment && attachment !== "") {
-      plainBody += "Attachment: " + attachment + "\nAttachment Status: " + validationResult.message + "\n\n";
-    }
-    
-    plainBody += "Approve: " + approvalLink + "\nReject: " + rejectLink + "\n\nThank you.\n\nThis is an automated email from " + companyName + ".";
-    
-    MailApp.sendEmail({
-      to: recipientEmail,
-      subject: subject,
-      htmlBody: htmlBody,
-      body: plainBody
-    });
-    
-    Logger.log("Multi-layer email sent to: " + recipientEmail + " for layer: " + layerDisplay);
-    return true;
-    
+
+    Logger.log("❌ No matching data found for rejection");
+    return false;
+
   } catch (error) {
-    Logger.log("Error sending multi-layer email: " + error.toString());
+    Logger.log("❌ Error updating rejection status: " + error.toString());
     return false;
   }
 }
 
-function createRejectionForm(name, email, project, documentType, attachment, layer, code) {
-  var layerDisplayNames = {
-    "FIRST_LAYER": "First Layer",
-    "SECOND_LAYER": "Second Layer",
-    "THIRD_LAYER": "Third Layer"
-  };
+// ============================================
+// SEND NOTIFICATIONS AFTER REJECTION
+// ============================================
 
-  var layerDisplay = layerDisplayNames[layer] || layer;
+function sendRejectionAndSendBackNotifications(name, email, project, documentType, attachment, layer, rejectionNote) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = sheet.getRange("A2:O" + sheet.getLastRow()).getValues();
+    
+    // Find the row
+    for (var i = 0; i < data.length; i++) {
+      var row = data[i];
+      var rowProject = row[2];
+      
+      if (rowProject && rowProject.toString().trim().toLowerCase() === project.toString().trim().toLowerCase()) {
+        
+        var requesterEmail = row[1]; // Column B
+        var levelOneEmail = row[10]; // Column K
+        var levelTwoEmail = row[11]; // Column L
+        var currentEditor = row[13]; // Column N
+        
+        var sendToEmail = "";
+        var sendToName = "";
+        
+        // Determine siapa yang harus di-notify untuk edit
+        if (layer === "LEVEL_ONE") {
+          // Rejected at Level One -> notify REQUESTER
+          sendToEmail = requesterEmail;
+          sendToName = row[0]; // Name from Column A
+          
+        } else if (layer === "LEVEL_TWO") {
+          // Rejected at Level Two -> notify LEVEL ONE
+          sendToEmail = levelOneEmail;
+          sendToName = "Level One Approver";
+          
+        } else if (layer === "LEVEL_THREE") {
+          // Rejected at Level Three -> notify LEVEL TWO
+          sendToEmail = levelTwoEmail;
+          sendToName = "Level Two Approver";
+        }
+        
+        if (sendToEmail) {
+          sendSendBackNotification(sendToEmail, project, documentType, layer, rejectionNote, sendToName);
+          Logger.log("✅ Send back notification sent to: " + sendToEmail);
+        }
+        
+        break;
+      }
+    }
+    
+  } catch (error) {
+    Logger.log("❌ Error sending notifications: " + error.toString());
+  }
+}
+
+// ============================================
+// SUCCESS & ERROR PAGES
+// ============================================
+
+function createSuccessPage(name, email, project, documentType, attachment, layer, code) {
+  var layerDisplay = getLayerDisplayName(layer);
+  
+  var html = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;text-align:center;padding:20px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);color:white;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}.container{background:white;color:#333;padding:40px 30px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.15);max-width:500px;width:90%;margin:0 auto}.success-icon{font-size:64px;margin-bottom:20px;color:#10B981}.title{font-weight:700;font-size:28px;margin-bottom:8px;color:#10B981}.details{background:#f8fafc;padding:20px;border-radius:10px;margin:20px 0;text-align:left}.detail-item{margin-bottom:10px;display:flex}.detail-label{font-weight:600;color:#326BC6;min-width:120px}.detail-value{color:#334155;flex:1}</style></head><body><div class="container"><div class="success-icon">✓</div><h1 class="title">Approval Successful!</h1><p style="color:#10B981;margin-bottom:25px;">' + layerDisplay + ' has been approved</p><div class="details"><div class="detail-item"><span class="detail-label">Project:</span><span class="detail-value">' + (project || "N/A") + '</span></div><div class="detail-item"><span class="detail-label">Layer:</span><span class="detail-value">' + layerDisplay + '</span></div><div class="detail-item"><span class="detail-label">Date:</span><span class="detail-value">' + getGMT7Time() + '</span></div></div><p style="font-size:13px;color:#64748b;margin-top:20px;">You can safely close this page.</p></div></body></html>';
+  
+  return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function createRejectionForm(name, email, project, documentType, attachment, layer, code) {
+  var layerDisplay = getLayerDisplayName(layer);
+  
+  // Create HTML template with proper Google Apps Script integration
+  var template = HtmlService.createTemplateFromFile('RejectionForm');
+  template.name = name || '';
+  template.email = email || '';
+  template.project = project || '';
+  template.documentType = documentType || '';
+  template.attachment = attachment || '';
+  template.layer = layer || '';
+  template.layerDisplay = layerDisplay;
+  template.code = code || '';
+  
+  return template.evaluate()
+    .setTitle('Rejection Form')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// Create separate HTML file content (inline version since we can't create files dynamically)
+function createRejectionForm(name, email, project, documentType, attachment, layer, code) {
+  var layerDisplay = getLayerDisplayName(layer);
+  var isEditor = layer === "LEVEL_ONE" || layer === "LEVEL_TWO";
 
   var docTypeBadge = "";
   if (documentType && documentType !== "") {
@@ -1071,7 +1231,10 @@ function createRejectionForm(name, email, project, documentType, attachment, lay
     docTypeBadge = '<div style="display: inline-block; background: ' + badgeColor + '; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin: 10px 0;">' + documentType + '</div>';
   }
 
-  // FIXED: SIMPLE HTML dengan JavaScript yang LENGKAP dan WORK
+  // Generate submit rejection link (sama kayak approval link)
+  var submitRejectionLink = generateRejectionSubmitLink(name, email, project, documentType, attachment, layer, code, "PLACEHOLDER_REJECTION_NOTE");
+
+  // PAKE METODE YANG SAMA KAYAK APPROVAL - SIMPLE HTML + DIRECT LINK
   var html = `
 <!DOCTYPE html>
 <html>
@@ -1145,6 +1308,7 @@ function createRejectionForm(name, email, project, documentType, attachment, lay
       font-size: 14px;
       min-height: 100px;
       resize: vertical;
+      box-sizing: border-box;
     }
     .button {
       display: inline-block;
@@ -1197,22 +1361,6 @@ function createRejectionForm(name, email, project, documentType, attachment, lay
       font-size: 12px;
       color: #64748b;
     }
-    .loading {
-      display: none;
-      color: #dc2626;
-      font-weight: 600;
-      margin-top: 15px;
-    }
-    .success-message {
-      color: #059669;
-      font-weight: 600;
-      margin-top: 15px;
-    }
-    .error-message {
-      color: #dc2626;
-      font-weight: 600;
-      margin-top: 15px;
-    }
   </style>
 </head>
 <body>
@@ -1245,32 +1393,22 @@ function createRejectionForm(name, email, project, documentType, attachment, lay
       </div>
     </div>
 
-    <form id="rejectionForm">
-      <input type="hidden" name="name" value="${name || ''}">
-      <input type="hidden" name="email" value="${email || ''}">
-      <input type="hidden" name="project" value="${project || ''}">
-      <input type="hidden" name="docType" value="${documentType || ''}">
-      <input type="hidden" name="attachment" value="${attachment || ''}">
-      <input type="hidden" name="layer" value="${layer || ''}">
-      <input type="hidden" name="code" value="${code || ''}">
-      
-      <div class="rejection-form">
-        <div class="form-group">
-          <label class="form-label" for="rejectionNote">Rejection Reason (Required):</label>
-          <textarea id="rejectionNote" name="rejectionNote" class="form-textarea" 
-                    placeholder="Please explain why this request is being rejected. This note will be visible to the requester and previous approvers." 
-                    required></textarea>
-        </div>
+    <div class="rejection-form">
+      <div class="form-group">
+        <label class="form-label" for="rejectionNote">Rejection Reason (Required):</label>
+        <textarea id="rejectionNote" class="form-textarea" 
+                  placeholder="Please explain why this request is being rejected. This note will be visible to the requester and previous approvers." 
+                  required></textarea>
       </div>
-      
-      <div style="text-align: center;">
-        <button type="button" id="submitBtn" class="button" onclick="submitRejectionForm()">Submit Rejection</button>
-      </div>
-      
-      <div id="loading" class="loading">Processing your rejection... Please wait.</div>
-      <div id="successMessage" class="success-message" style="display: none;">Rejection submitted successfully! Redirecting...</div>
-      <div id="errorMessage" class="error-message" style="display: none;"></div>
-    </form>
+    </div>
+    
+    <div style="text-align: center;">
+      <button type="button" id="submitBtn" class="button" onclick="submitRejectionDirect()">Submit Rejection</button>
+    </div>
+    
+    <div id="loading" style="display: none; color: #dc2626; font-weight: 600; margin-top: 15px;">
+      Processing your rejection... Please wait.
+    </div>
     
     <div class="company-brand">
       <strong>Atreus Global</strong> • Multi-Layer Approval System
@@ -1278,81 +1416,47 @@ function createRejectionForm(name, email, project, documentType, attachment, lay
   </div>
 
   <script>
-    // FIXED: COMPLETE JavaScript function - TIDAK ADA YANG TERPOTONG
-    function submitRejectionForm() {
+    // PAKE METODE DIRECT REDIRECT - SAMA KAYAK APPROVAL
+    function submitRejectionDirect() {
       console.log('Submit button clicked');
       
-      var submitBtn = document.getElementById('submitBtn');
-      var loading = document.getElementById('loading');
-      var successMessage = document.getElementById('successMessage');
-      var errorMessage = document.getElementById('errorMessage');
       var rejectionNote = document.getElementById('rejectionNote').value;
       
-      // Reset messages
-      errorMessage.style.display = 'none';
-      successMessage.style.display = 'none';
-      
-      // Validation
       if (!rejectionNote.trim()) {
-        errorMessage.textContent = 'Please provide a rejection reason.';
-        errorMessage.style.display = 'block';
+        alert('Please provide a rejection reason.');
         return;
       }
       
-      // Show loading, disable button
-      submitBtn.disabled = true;
-      loading.style.display = 'block';
+      // Show loading
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('loading').style.display = 'block';
       
-      // Prepare form data
-      var form = document.getElementById('rejectionForm');
-      var formData = new FormData(form);
-      var params = {};
+      // Build URL dengan rejection note
+      var baseUrl = "${WEB_APP_URL}";
+      var params = {
+        action: "submit_rejection",
+        name: "${encodeURIComponent(name || "")}",
+        email: "${encodeURIComponent(email || "")}",
+        project: "${encodeURIComponent(project || "")}",
+        docType: "${encodeURIComponent(documentType || "")}",
+        attachment: "${encodeURIComponent(attachment || "")}",
+        layer: "${layer}",
+        code: "${code}",
+        rejectionNote: encodeURIComponent(rejectionNote),
+        timestamp: new Date().getTime()
+      };
       
-      for (var pair of formData.entries()) {
-        params[pair[0]] = pair[1];
-      }
+      var queryString = Object.keys(params)
+        .map(key => key + '=' + params[key])
+        .join('&');
       
-      params.rejectionNote = rejectionNote;
-      params.action = 'submit_rejection';
+      var finalUrl = baseUrl + "?" + queryString;
       
-      console.log('Submitting rejection with params:', params);
+      console.log('Redirecting to:', finalUrl);
       
-      // FIXED: Use google.script.run dengan error handling yang proper
-      google.script.run
-        .withSuccessHandler(function(result) {
-          console.log('Rejection success:', result);
-          loading.style.display = 'none';
-          successMessage.style.display = 'block';
-          
-          // Redirect ke halaman success
-          setTimeout(function() {
-            // Redirect ke success page
-            var successUrl = 'https://script.google.com/macros/s/AKfycbyfz6LxLBXCIoOLcIty4Kcwq61Jj9zYUkzqHeEEWVX_3pOln796hX9gueXFw0l4PPbd/exec' +
-              '?action=rejection_success' +
-              '&project=' + encodeURIComponent(params.project || '') +
-              '&layer=' + encodeURIComponent(params.layer || '') +
-              '&name=' + encodeURIComponent(params.name || '');
-            window.location.href = successUrl;
-          }, 1500);
-        })
-        .withFailureHandler(function(error) {
-          console.error('Rejection failed:', error);
-          loading.style.display = 'none';
-          submitBtn.disabled = false;
-          errorMessage.textContent = 'Rejection failed: ' + error.message;
-          errorMessage.style.display = 'block';
-        })
-        .handleRejectionSubmission(params);
+      // Direct redirect - SAMA KAYAK APPROVAL LINK
+      window.location.href = finalUrl;
     }
-    
-    // FIXED: Add event listener untuk Enter key
-    document.getElementById('rejectionNote').addEventListener('keydown', function(e) {
-      if (e.ctrlKey && e.key === 'Enter') {
-        submitRejectionForm();
-      }
-    });
-    
-    console.log('Rejection form loaded successfully');
   </script>
 </body>
 </html>`;
@@ -1360,636 +1464,102 @@ function createRejectionForm(name, email, project, documentType, attachment, lay
   return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function handleRejectionSubmission(params) {
-    try {
-        Logger.log("Rejection submission received - FIXED VERSION");
-        
-        // Extract parameters
-        var name = params.name || "";
-        var email = params.email || "";
-        var project = params.project || "";
-        var documentType = params.docType || "";
-        var attachment = params.attachment || "";
-        var layer = params.layer || "";
-        var code = params.code || "";
-        var rejectionNote = params.rejectionNote || "";
+// Helper function untuk generate rejection submit link (optional, tapi ga dipake)
+function generateRejectionSubmitLink(name, email, description, documentType, attachment, layer, code, rejectionNote) {
+  var timestamp = new Date().getTime();
+  
+  var params = {
+    action: "submit_rejection",
+    name: encodeURIComponent(name || ""),
+    email: encodeURIComponent(email || ""),
+    project: encodeURIComponent(description || ""),
+    docType: encodeURIComponent(documentType || ""),
+    attachment: encodeURIComponent(attachment || ""),
+    layer: layer,
+    code: code,
+    rejectionNote: encodeURIComponent(rejectionNote || ""),
+    timestamp: timestamp
+  };
 
-        Logger.log("Rejection data - Name: " + name + ", Project: " + project + ", Layer: " + layer);
+  var queryString = Object.keys(params)
+    .map(key => key + '=' + params[key])
+    .join('&');
 
-        // Validation
-        if (!rejectionNote || rejectionNote.trim() === "") {
-            return createErrorPage("Rejection note is required.");
-        }
-
-        // Update spreadsheet
-        var updated = updateMultiLayerRejectionStatus(name, email, project, layer, code, rejectionNote);
-
-        if (updated) {
-            Logger.log("Rejection updated successfully");
-
-            // Send notifications
-            try {
-                sendRejectionNotification(name, email, project, documentType, attachment, layer, rejectionNote);
-                Logger.log("Notifications sent");
-            } catch (notifyError) {
-                Logger.log("Notification failed: " + notifyError.toString());
-            }
-
-            // RETURN SUCCESS PAGE - PASTI WORK
-            return createRejectionSuccessPage(name, email, project, documentType, attachment, layer, rejectionNote);
-            
-        } else {
-            Logger.log("Rejection failed - data not found");
-            return createErrorPage("Rejection failed - data not found in spreadsheet");
-        }
-
-    } catch (error) {
-        Logger.log("Error in handleRejectionSubmission: " + error.toString());
-        return createErrorPage("System error during rejection: " + error.message);
-    }
+  return WEB_APP_URL + "?" + queryString;
 }
 
-function updateMultiLayerRejectionStatus(name, email, project, layer, code, rejectionNote) {
-  try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      return false;
-    }
-
-    var data = sheet.getRange("A2:N" + lastRow).getValues();
-
-    for (var i = 0; i < data.length; i++) {
-      var row = data[i];
-      var rowName = row[0];
-      var rowEmail = row[1];
-      var rowProject = row[2];
-      var rowStatus = row[13];
-
-      if (!rowName && !rowEmail && !rowProject) continue;
-
-      // FIXED: SUPER STRICT MATCHING - sama seperti approval
-      var nameMatch = rowName && name && 
-                     rowName.toString().trim().toLowerCase() === name.toString().trim().toLowerCase();
-      
-      var emailMatch = rowEmail && email && 
-                      rowEmail.toString().trim().toLowerCase() === email.toString().trim().toLowerCase();
-      
-      var projectMatch = rowProject && project && 
-                        rowProject.toString().trim().toLowerCase() === project.toString().trim().toLowerCase();
-
-      // FIXED: Hanya proses row yang statusnya PROCESSING/ACTIVE dan layer yang sesuai masih PENDING
-      var isEligibleForUpdate = (rowStatus === "PROCESSING" || rowStatus === "ACTIVE");
-      
-      // Check layer status
-      var layerColumn = getLayerColumnIndex(layer);
-      var currentLayerStatus = layerColumn !== -1 ? sheet.getRange(i + 2, layerColumn).getValue() : "";
-      var isLayerPending = (!currentLayerStatus || currentLayerStatus === "" || currentLayerStatus === "PENDING");
-
-      // FIXED: HARUS MATCH SEMUA 3 FIELD + ELIGIBLE + LAYER PENDING
-      if (nameMatch && emailMatch && projectMatch && isEligibleForUpdate && isLayerPending) {
-        Logger.log("✅ EXACT MATCH FOUND at row " + (i + 2) + " for rejection");
-        Logger.log("   Name: '" + rowName + "' = '" + name + "'");
-        Logger.log("   Email: '" + rowEmail + "' = '" + email + "'");
-        Logger.log("   Project: '" + rowProject + "' = '" + project + "'");
-
-        var columnIndex = getLayerColumnIndex(layer);
-        if (columnIndex !== -1) {
-          var currentStatus = sheet.getRange(i + 2, columnIndex).getValue();
-          if (currentStatus === "REJECTED" || currentStatus === "APPROVED") {
-            Logger.log("⚠️ Layer already processed - skipping");
-            return false;
-          }
-
-          // Set current layer to REJECTED
-          sheet.getRange(i + 2, columnIndex).setValue("REJECTED");
-          sheet.getRange(i + 2, columnIndex).setBackground("#FF6B6B");
-          sheet.getRange(i + 2, columnIndex).setNote("Rejected by " + getLayerDisplayName(layer) + " - " + getGMT7Time() + " - Code: " + code + "\nReason: " + rejectionNote);
-
-          // RESET SEMUA LAYER SETELAHNYA KE PENDING
-          if (layer === "FIRST_LAYER") {
-            sheet.getRange(i + 2, 9).setValue("PENDING");  // Second Layer
-            sheet.getRange(i + 2, 9).setBackground(null);
-            sheet.getRange(i + 2, 9).setNote("");
-            sheet.getRange(i + 2, 10).setValue("PENDING"); // Third Layer
-            sheet.getRange(i + 2, 10).setBackground(null);
-            sheet.getRange(i + 2, 10).setNote("");
-          } else if (layer === "SECOND_LAYER") {
-            sheet.getRange(i + 2, 10).setValue("PENDING"); // Third Layer
-            sheet.getRange(i + 2, 10).setBackground(null);
-            sheet.getRange(i + 2, 10).setNote("");
-          }
-
-          // SET OVERALL STATUS KE REJECTED
-          sheet.getRange(i + 2, 14).setValue("REJECTED");
-          sheet.getRange(i + 2, 14).setBackground("#FF6B6B");
-          
-          // UPDATE LOG NOTES
-          var currentNote = sheet.getRange(i + 2, 7).getNote();
-          if (currentNote && currentNote.includes("APPROVAL_LINK")) {
-            sheet.getRange(i + 2, 7).setNote("REJECTED: " + getGMT7Time() + " - Reason: " + rejectionNote);
-          }
-
-          Logger.log("✅ Rejection recorded for layer: " + layer + " at row " + (i + 2));
-          return true;
-        }
-      }
-    }
-
-    Logger.log("❌ No exact matching data found for rejection");
-    
-    // FIXED: FALLBACK - sama seperti approval
-    return fallbackStrictMatch(sheet, data, name, email, project, layer, code, "REJECTED");
-
-  } catch (error) {
-    Logger.log("❌ Error updating rejection status: " + error.toString());
-    return false;
-  }
-}
-
-// FIXED: IMPROVED REJECTION NOTIFICATION - SESUAI FLOW DIAGRAM
-function sendRejectionNotification(name, email, project, documentType, attachment, layer, rejectionNote) {
-  try {
-    var layerDisplayNames = {
-      "FIRST_LAYER": "First Layer",
-      "SECOND_LAYER": "Second Layer", 
-      "THIRD_LAYER": "Third Layer"
-    };
-
-    var layerDisplay = layerDisplayNames[layer] || layer;
-    var companyName = "Atreus Global";
-    var currentTime = getGMT7Time();
-
-    // 1. NOTIFY REQUESTER (SELALU)
-    var requesterSubject = "Approval Request Rejected - " + project;
-    var requesterBody = "Dear " + (name || "Requester") + ",\n\n" +
-      "Your approval request has been REJECTED at the " + layerDisplay + " level.\n\n" +
-      "Project: " + project + "\n" +
-      "Rejected at: " + layerDisplay + " Approval\n" +
-      "Rejection Date: " + currentTime + "\n\n" +
-      "REJECTION REASON:\n" + rejectionNote + "\n\n" +
-      "NEXT STEPS:\n" +
-      "Please review the feedback above and make necessary changes to your submission.\n" +
-      "Once revised, you may resubmit for approval.\n\n" +
-      "Best regards,\n" +
-      companyName + " Approval System";
-
-    MailApp.sendEmail({
-      to: email,
-      subject: requesterSubject,
-      body: requesterBody
-    });
-
-    Logger.log("Rejection notification sent to requester: " + email);
-
-    // 2. NOTIFY PREVIOUS APPROVERS (jika ada)
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
-    var previousApprovers = [];
-
-    // Cari row yang sesuai untuk dapat email previous approvers
-    for (var i = 0; i < data.length; i++) {
-      var row = data[i];
-      var rowName = row[0];
-      var rowEmail = row[1];
-      var rowProject = row[2];
-
-      if (!rowName || !rowProject) continue;
-
-      var nameMatch = rowName.toString().trim().toLowerCase() === (name || "").toString().trim().toLowerCase();
-      var projectMatch = rowProject.toString().trim().toLowerCase().includes((project || "").toString().trim().toLowerCase());
-
-      if (nameMatch && projectMatch) {
-        Logger.log("Found matching row for notification: " + rowName + " - " + rowProject);
-        
-        // Kumpulkan semua previous approvers berdasarkan layer rejection
-        if (layer === "SECOND_LAYER" || layer === "THIRD_LAYER") {
-          if (row[10] && row[7] === "APPROVED") { // FirstLayerEmail & status approved
-            previousApprovers.push({
-              email: row[10],
-              layer: "First Layer",
-              name: "First Layer Approver"
-            });
-          }
-        }
-        if (layer === "THIRD_LAYER") {
-          if (row[11] && row[8] === "APPROVED") { // SecondLayer Email & status approved
-            previousApprovers.push({
-              email: row[11],
-              layer: "Second Layer", 
-              name: "Second Layer Approver"
-            });
-          }
-        }
-        break;
-      }
-    }
-
-    // Kirim email ke previous approvers
-    previousApprovers.forEach(function(approver) {
-      var approverSubject = "Update: Approval Request Rejected - " + project;
-      var approverBody = "Dear " + (approver.name || "Approver") + ",\n\n" +
-        "An approval request that you previously approved has been REJECTED at a later stage.\n\n" +
-        "Project: " + project + "\n" +
-        "Requester: " + name + " (" + email + ")\n" +
-        "Your Approval: " + approver.layer + "\n" +
-        "Rejected at: " + layerDisplay + " Approval\n" +
-        "Rejection Date: " + currentTime + "\n\n" +
-        "REJECTION REASON:\n" + rejectionNote + "\n\n" +
-        "The requester has been notified and asked to make necessary revisions.\n\n" +
-        "Best regards,\n" +
-        companyName + " Approval System";
-
-      MailApp.sendEmail({
-        to: approver.email,
-        subject: approverSubject,
-        body: approverBody
-      });
-
-      Logger.log("Rejection notification sent to previous approver: " + approver.email);
-    });
-
-    // 3. NOTIFY ADMIN (optional - untuk tracking)
-    try {
-      var adminSubject = "Rejection Recorded - " + project;
-      var adminBody = "Rejection recorded in Multi-Layer Approval System:\n\n" +
-        "Project: " + project + "\n" +
-        "Requester: " + name + " (" + email + ")\n" +
-        "Rejected at: " + layerDisplay + "\n" +
-        "Rejection Reason: " + rejectionNote + "\n" +
-        "Time: " + currentTime + "\n\n" +
-        "System: Multi-Layer Approval";
-      
-      sendAdminNotification(adminBody, adminSubject);
-    } catch (adminError) {
-      Logger.log("Admin notification optional: " + adminError.toString());
-    }
-
-    Logger.log("All rejection notifications sent successfully");
-
-  } catch (error) {
-    Logger.log("Error sending rejection notification: " + error.toString());
-    throw error; // Re-throw agar tahu di log utama
-  }
-}
-
-// NEW: IMPROVED REJECTION SUCCESS PAGE
-// FIXED: REJECTION SUCCESS PAGE - SAMA KAYA APPROVAL
 function createRejectionSuccessPage(name, email, project, documentType, attachment, layer, rejectionNote) {
-  var layerDisplayNames = {
-    "FIRST_LAYER": "First Layer",
-    "SECOND_LAYER": "Second Layer",
-    "THIRD_LAYER": "Third Layer"
-  };
+  var layerDisplay = getLayerDisplayName(layer);
 
-  var layerDisplay = layerDisplayNames[layer] || layer;
-  var currentTime = getGMT7Time();
-
-  var html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <base target="_top">
-  <style>
-    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
-    body {
-      font-family: "Inter", sans-serif;
-      text-align: center;
-      padding: 20px;
-      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-      color: white;
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .container {
-      background: white;
-      color: #333;
-      padding: 40px 30px;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-      max-width: 500px;
-      width: 90%;
-      margin: 0 auto;
-    }
-    .success-icon {
-      font-size: 64px;
-      margin-bottom: 20px;
-      color: #dc2626;
-    }
-    .title {
-      font-weight: 700;
-      font-size: 28px;
-      margin-bottom: 8px;
-      color: #dc2626;
-    }
-    .details {
-      background: #f8fafc;
-      padding: 20px;
-      border-radius: 10px;
-      margin: 20px 0;
-      text-align: left;
-    }
-    .detail-item {
-      margin-bottom: 10px;
-      display: flex;
-    }
-    .detail-label {
-      font-weight: 600;
-      color: #dc2626;
-      min-width: 120px;
-    }
-    .detail-value {
-      color: #334155;
-      flex: 1;
-    }
-    .rejection-note {
-      background: #fef2f2;
-      padding: 15px;
-      border-radius: 8px;
-      margin: 20px 0;
-      border-left: 4px solid #dc2626;
-      text-align: left;
-    }
-    .close-note {
-      font-size: 13px;
-      color: #64748b;
-      margin-top: 20px;
-      font-style: italic;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="success-icon">✓</div>
-    <h1 class="title">Rejection Submitted Successfully</h1>
-    <p style="color: #dc2626; margin-bottom: 25px;">Thank you for your review</p>
-    
-    <div class="details">
-      <div class="detail-item">
-        <span class="detail-label">Project:</span>
-        <span class="detail-value">${project || "N/A"}</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Requester:</span>
-        <span class="detail-value">${name || "N/A"}</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Layer:</span>
-        <span class="detail-value">${layerDisplay}</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Date:</span>
-        <span class="detail-value">${currentTime}</span>
-      </div>
-    </div>
-    
-    <div class="rejection-note">
-      <strong style="color:#dc2626;">Your Rejection Reason:</strong><br>
-      ${rejectionNote.replace(/\n/g, '<br>')}
-    </div>
-    
-    <p class="close-note">The rejection has been recorded and notifications have been sent. You can safely close this page.</p>
-    
-    <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">
-      <strong>Atreus Global</strong> • Multi-Layer Approval System
-    </div>
-  </div>
-  
-  <script>
-    // Auto-close after 5 seconds
-    setTimeout(function() {
-      window.close();
-    }, 5000);
-  </script>
-</body>
-</html>`;
+  var html = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;text-align:center;padding:20px;background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);color:white;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}.container{background:white;color:#333;padding:40px 30px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.15);max-width:500px;width:90%;margin:0 auto}.success-icon{font-size:64px;margin-bottom:20px;color:#dc2626}.title{font-weight:700;font-size:28px;margin-bottom:8px;color:#dc2626}.details{background:#f8fafc;padding:20px;border-radius:10px;margin:20px 0;text-align:left}.detail-item{margin-bottom:10px}</style></head><body><div class="container"><div class="success-icon">✓</div><h1 class="title">Rejection Submitted</h1><p style="color:#dc2626;margin-bottom:25px;">Document has been sent back for revision</p><div class="details"><div class="detail-item"><strong>Project:</strong> ' + (project || "N/A") + '</div><div class="detail-item"><strong>Layer:</strong> ' + layerDisplay + '</div><div class="detail-item"><strong>Date:</strong> ' + getGMT7Time() + '</div></div><p style="font-size:13px;color:#64748b;margin-top:20px;">Notification has been sent. You can close this page.</p></div><script>setTimeout(function(){window.close()},5000)</script></body></html>';
 
   return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-// ============================================
-// PART 3: SUCCESS PAGES & MENU FUNCTIONS
-// ============================================
-
-function showRejectionSuccessPage(params) {
-  try {
-    var name = params.name ? decodeURIComponent(params.name) : "";
-    var project = params.project ? decodeURIComponent(params.project) : "";
-    var layer = params.layer ? decodeURIComponent(params.layer) : "";
-    
-    var layerDisplayNames = {
-      "FIRST_LAYER": "First Layer",
-      "SECOND_LAYER": "Second Layer", 
-      "THIRD_LAYER": "Third Layer"
-    };
-    
-    var layerDisplay = layerDisplayNames[layer] || layer;
-    
-    var html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
-    body {
-      font-family: "Inter", sans-serif;
-      text-align: center;
-      padding: 20px;
-      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-      color: white;
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .container {
-      background: white;
-      color: #333;
-      padding: 40px 30px;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-      max-width: 500px;
-      width: 90%;
-      margin: 0 auto;
-    }
-    .success-icon {
-      font-size: 64px;
-      margin-bottom: 20px;
-      color: #dc2626;
-    }
-    .title {
-      font-weight: 700;
-      font-size: 28px;
-      margin-bottom: 8px;
-      color: #dc2626;
-    }
-    .details {
-      background: #f8fafc;
-      padding: 20px;
-      border-radius: 10px;
-      margin: 20px 0;
-      text-align: left;
-    }
-    .detail-item {
-      margin-bottom: 10px;
-      display: flex;
-    }
-    .detail-label {
-      font-weight: 600;
-      color: #dc2626;
-      min-width: 120px;
-    }
-    .detail-value {
-      color: #334155;
-      flex: 1;
-    }
-    .close-note {
-      font-size: 13px;
-      color: #64748b;
-      margin-top: 20px;
-      font-style: italic;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="success-icon">✓</div>
-    <h1 class="title">Rejection Submitted Successfully</h1>
-    <p style="color: #dc2626; margin-bottom: 25px;">Thank you for your review</p>
-    
-    <div class="details">
-      <div class="detail-item">
-        <span class="detail-label">Project:</span>
-        <span class="detail-value">${project || "N/A"}</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Requester:</span>
-        <span class="detail-value">${name || "N/A"}</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Layer:</span>
-        <span class="detail-value">${layerDisplay}</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Date:</span>
-        <span class="detail-value">${getGMT7Time()}</span>
-      </div>
-    </div>
-    
-    <p class="close-note">The rejection has been recorded and notifications have been sent. You can safely close this page.</p>
-    
-    <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">
-      <strong>Atreus Global</strong> • Multi-Layer Approval System
-    </div>
-  </div>
-  
-  <script>
-    // Auto-close after 5 seconds
-    setTimeout(function() {
-      window.close();
-    }, 5000);
-  </script>
-</body>
-</html>`;
-    
-    return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    
-  } catch (error) {
-    Logger.log("Error in showRejectionSuccessPage: " + error.toString());
-    return createErrorPage("Error showing success page: " + error.message);
-  }
-}
-
-function createSuccessPage(name, email, project, documentType, attachment, layer, code) {
-  var layerDisplayNames = {
-    "FIRST_LAYER": "First Layer",
-    "SECOND_LAYER": "Second Layer",
-    "THIRD_LAYER": "Third Layer"
-  };
-  
-  var layerDisplay = layerDisplayNames[layer] || layer;
-  
-  var docTypeBadge = "";
-  if (documentType && documentType !== "") {
-    var docTypeColors = {
-      "ICC": "#3B82F6",
-      "Quotation": "#10B981",
-      "Proposal": "#F59E0B"
-    };
-    var badgeColor = docTypeColors[documentType] || "#6B7280";
-    docTypeBadge = '<div style="display: inline-block; background: ' + badgeColor + '; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin: 10px 0;">' + documentType + '</div>';
-  }
-  
-  var attachmentSection = "";
-  if (attachment && attachment !== "") {
-    attachmentSection = '<div class="detail-item"><span class="detail-label">Attachment:</span><span class="detail-value"><a href="' + attachment + '" target="_blank" style="color: #326BC6;">View Document</a></span></div>';
-  }
-  
-  var nextStep = "";
-  var completionStatus = "";
-  
-  if (layer === "FIRST_LAYER") {
-    nextStep = "This approval will now proceed to Second Layer review.";
-    completionStatus = "First Layer Approval Complete";
-  } else if (layer === "SECOND_LAYER") {
-    nextStep = "This approval will now proceed to Third Layer final approval.";
-    completionStatus = "Second Layer Approval Complete";
-  } else if (layer === "THIRD_LAYER") {
-    nextStep = "This project has been fully approved and completed!";
-    completionStatus = "Final Approval Complete";
-  }
-  
-  var progressBar = getProgressBarForSuccessPage(layer);
-  
-  var html = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;text-align:center;padding:20px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);color:white;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}.container{background:white;color:#333;padding:40px 30px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.15);max-width:500px;width:90%;margin:0 auto}.success-icon{font-size:64px;margin-bottom:20px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:700}.title{font-weight:700;font-size:28px;margin-bottom:8px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}.subtitle{font-weight:500;font-size:16px;color:#326BC6;margin-bottom:25px}.completion-badge{background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);color:#065f46;padding:8px 16px;border-radius:20px;font-size:14px;font-weight:600;margin-bottom:20px;display:inline-block}.details{background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);padding:20px;border-radius:10px;margin:20px 0;text-align:left;border-left:4px solid #326BC6}.detail-item{margin-bottom:10px;display:flex}.detail-label{font-weight:600;color:#183460;min-width:120px}.detail-value{color:#334155;flex:1}.next-step{background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #059669}.next-step strong{color:#065f46}.close-note{font-size:13px;color:#64748b;margin-top:20px;font-style:italic}.company-brand{margin-top:25px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b}.progress-track{background:#f8f9fa;padding:15px;border-radius:8px;margin:20px 0}.progress-steps{display:flex;justify-content:center;align-items:center;gap:40px;position:relative}.progress-step{text-align:center;position:relative}.step-number{width:40px;height:40px;border-radius:50%;margin:0 auto 8px;font-weight:600;display:flex;align-items:center;justify-content:center;font-size:16px}.step-active{background:#326BC6;color:white}.step-completed{background:#10b981;color:white}.step-pending{background:#e0e0e0;color:#666}.step-label{font-size:11px;font-weight:500;color:#64748b}.step-current .step-label{color:#326BC6;font-weight:600}</style></head><body><div class="container"><div class="success-icon">✓</div><h1 class="title">' + layerDisplay + ' Approval Successful!</h1><div class="completion-badge">' + completionStatus + '</div><p class="subtitle">Thank you <strong>' + (name || "User") + '</strong></p>' + docTypeBadge + '<div class="progress-track">' + progressBar + '</div><div class="details"><div class="detail-item"><span class="detail-label">Project:</span><span class="detail-value">' + (project || "N/A") + '</span></div><div class="detail-item"><span class="detail-label">Approver:</span><span class="detail-value">' + (name || "N/A") + '</span></div><div class="detail-item"><span class="detail-label">Email:</span><span class="detail-value">' + (email || "N/A") + '</span></div><div class="detail-item"><span class="detail-label">Approval Layer:</span><span class="detail-value">' + layerDisplay + '</span></div><div class="detail-item"><span class="detail-label">Date:</span><span class="detail-value">' + getGMT7Time() + '</span></div><div class="detail-item"><span class="detail-label">Approval Code:</span><span class="detail-value">' + (code || "N/A") + '</span></div>' + attachmentSection + '</div><div class="next-step"><strong>Next Step:</strong> ' + nextStep + '</div><p class="close-note">You can safely close this page.</p><div class="company-brand"><strong>Atreus Global</strong> • Multi-Layer Approval System</div></div></body></html>';
-  
-  return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-function getProgressBarForSuccessPage(currentLayer) {
-  var steps = [
-    { number: 1, label: "First Layer", status: currentLayer === "FIRST_LAYER" ? "active" : (["SECOND_LAYER", "THIRD_LAYER"].includes(currentLayer) ? "completed" : "pending") },
-    { number: 2, label: "Second Layer", status: currentLayer === "SECOND_LAYER" ? "active" : (currentLayer === "THIRD_LAYER" ? "completed" : "pending") },
-    { number: 3, label: "Third Layer", status: currentLayer === "THIRD_LAYER" ? "active" : "pending" }
-  ];
-  
-  var progressHtml = '<div class="progress-steps">';
-  
-  steps.forEach(function(step) {
-    var stepClass = "progress-step";
-    if (step.status === "active") {
-      stepClass += " step-current";
-    }
-    
-    progressHtml += '<div class="' + stepClass + '"><div class="step-number step-' + step.status + '">' + step.number + '</div><div class="step-label">' + step.label + '</div></div>';
-  });
-  
-  progressHtml += '</div>';
-  return progressHtml;
 }
 
 function createErrorPage(errorMessage) {
-  var html = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;text-align:center;padding:20px;background:linear-gradient(135deg,#326BC6 0%,#183460 100%);color:white;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}.container{background:white;color:#333;padding:40px 30px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.15);max-width:500px;width:90%;margin:0 auto}.error-icon{font-size:64px;margin-bottom:20px;color:#dc2626;font-weight:700}.title{font-weight:700;font-size:28px;margin-bottom:8px;color:#dc2626}.error-message{background:linear-gradient(135deg,#fef2f2 0%,#fee2e2 100%);padding:18px;border-radius:8px;margin:20px 0;border-left:4px solid #dc2626;text-align:left}.support-contact{font-size:13px;color:#64748b;margin-top:20px;padding:15px;background:#f8fafc;border-radius:8px}.action-buttons{margin-top:25px;display:flex;gap:10px;justify-content:center}.btn{padding:10px 20px;border:none;border-radius:6px;font-weight:500;cursor:pointer;text-decoration:none;display:inline-block;transition:all 0.2s ease}.btn-primary{background:#326BC6;color:white}.btn-secondary{background:#64748b;color:white}.btn:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}</style></head><body><div class="container"><div class="error-icon">✗</div><h1 class="title">Approval Failed</h1><div class="error-message"><strong style="color:#dc2626;">Error Details:</strong><br>' + errorMessage + '</div><p style="color:#475569;margin-bottom:20px;">Please try again or contact your system administrator if this issue persists.</p><div class="action-buttons"><a href="javascript:window.location.reload()" class="btn btn-primary">Try Again</a><a href="javascript:window.close()" class="btn btn-secondary">Close</a></div><div class="support-contact"><strong style="color:#183460;">Atreus Global</strong><br>Please provide the error message above when contacting support.<br><span style="font-size:11px;color:#94a3b8;">Error ID: ' + Utilities.getUuid().substring(0, 8) + '</span></div></div></body></html>';
+  var html = '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;text-align:center;padding:20px;background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);color:white;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}.container{background:white;color:#333;padding:40px 30px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.15);max-width:500px;width:90%;margin:0 auto}.error-icon{font-size:64px;margin-bottom:20px;color:#dc2626}.title{font-weight:700;font-size:28px;margin-bottom:8px;color:#dc2626}.error-box{background:#fef2f2;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #dc2626;text-align:left}</style></head><body><div class="container"><div class="error-icon">✗</div><h1 class="title">Error</h1><div class="error-box">' + errorMessage + '</div><p style="font-size:13px;color:#64748b;margin-top:20px;">Please contact support if this issue persists.</p></div></body></html>';
   
   return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+function showRejectionSuccessPage(params) {
+  var project = params.project ? decodeURIComponent(params.project) : "";
+  var layer = params.layer ? decodeURIComponent(params.layer) : "";
+  
+  return createRejectionSuccessPage("", "", project, "", "", layer, "");
+}
+
 // ============================================
-// MENU & UTILITY FUNCTIONS
+// PART 4: UI FUNCTIONS & MENU (FINAL)
+// Multi-Layer Reusable Approval System
+// ============================================
+
+// ============================================
+// MENU CREATION
+// ============================================
+
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('🔄 Multi-Layer Approval')
+    .addItem('📤 Send Approvals', 'sendMultiLayerApproval')
+    .addItem('📥 Resubmit After Revision', 'resubmitAfterRevision')
+    .addSeparator()
+    .addItem('➡️ Force Send Level Two (After Level One)', 'sendNextApprovalAfterLevelOne')
+    .addItem('➡️ Force Send Level Three (After Level Two)', 'sendNextApprovalAfterLevelTwo')
+    .addItem('➡️ Force Send All Pending Next Layers', 'forceSendNextLayers')
+    .addSeparator()
+    .addItem('📊 View Approval Pipeline', 'showApprovalPipeline')
+    .addItem('✅ Check Attachment Validation', 'validateAllAttachments')
+    .addItem('🔄 Reset Selected Rows', 'resetMultiLayerRows')
+    .addSeparator()
+    .addItem('🧪 Test Complete Flow', 'testCompleteFlow')
+    .addItem('🧪 Test Rejection Flow', 'testRejectionFlow')
+    .addItem('🔍 Debug Current Row', 'debugCurrentRow')
+    .addSeparator()
+    .addItem('⚙️ Manual Approve - Level One', 'manualApproveLevelOne')
+    .addItem('⚙️ Manual Approve - Level Two', 'manualApproveLevelTwo')
+    .addItem('⚙️ Manual Approve - Level Three', 'manualApproveLevelThree')
+    .addSeparator()
+    .addItem('📝 View Recent Logs', 'viewLogs')
+    .addItem('ℹ️ About System', 'showAbout')
+    .addToUi();
+}
+
+// ============================================
+// PIPELINE DASHBOARD
 // ============================================
 
 function showApprovalPipeline() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
+  var data = sheet.getRange("A2:O" + sheet.getLastRow()).getValues();
   
   var pipeline = {
-    "PENDING_FIRST_LAYER": [],
-    "PENDING_SECOND_LAYER": [],
-    "PENDING_THIRD_LAYER": [],
+    "PENDING_LEVEL_ONE": [],
+    "PENDING_LEVEL_TWO": [],
+    "PENDING_LEVEL_THREE": [],
+    "EDITING_REQUESTER": [],
+    "EDITING_LEVEL_ONE": [],
+    "EDITING_LEVEL_TWO": [],
     "COMPLETED": [],
     "INVALID_ATTACHMENT": []
   };
@@ -1998,51 +1568,79 @@ function showApprovalPipeline() {
     var row = data[i];
     if (!row[0]) continue;
 
-    var firstLayer = row[7]; // Column H
-    var secondLayer = row[8]; // Column I
-    var thirdLayer = row[9]; // Column J
+    var levelOne = row[7]; // Column H
+    var levelTwo = row[8]; // Column I
+    var levelThree = row[9]; // Column J
+    var currentEditor = row[13]; // Column N
+    var overallStatus = row[14]; // Column O
     var attachment = row[4]; // Column E
     var documentType = row[3]; // Column D
 
+    var itemName = row[0] + " - " + row[2];
+
+    // Check attachment validity
     if (attachment && attachment !== "") {
       var validation = validateGoogleDriveAttachmentWithType(attachment, documentType);
       if (!validation.valid) {
-        pipeline.INVALID_ATTACHMENT.push(row[0] + " - " + row[2]);
+        pipeline.INVALID_ATTACHMENT.push(itemName);
         continue;
       }
     }
 
-    if (!firstLayer || firstLayer === "PENDING") {
-      pipeline.PENDING_FIRST_LAYER.push(row[0] + " - " + row[2]);
-    } else if (firstLayer === "APPROVED" && (!secondLayer || secondLayer === "PENDING")) {
-      pipeline.PENDING_SECOND_LAYER.push(row[0] + " - " + row[2]);
-    } else if (secondLayer === "APPROVED" && (!thirdLayer || thirdLayer === "PENDING")) {
-      pipeline.PENDING_THIRD_LAYER.push(row[0] + " - " + row[2]);
-    } else if (thirdLayer === "APPROVED") {
-      pipeline.COMPLETED.push(row[0] + " - " + row[2]);
+    // Categorize based on status
+    if (overallStatus === "EDITING") {
+      if (currentEditor === "REQUESTER") {
+        pipeline.EDITING_REQUESTER.push(itemName);
+      } else if (currentEditor === "LEVEL_ONE") {
+        pipeline.EDITING_LEVEL_ONE.push(itemName);
+      } else if (currentEditor === "LEVEL_TWO") {
+        pipeline.EDITING_LEVEL_TWO.push(itemName);
+      }
+    } else if (overallStatus === "COMPLETED") {
+      pipeline.COMPLETED.push(itemName);
+    } else {
+      // Check approval stages
+      if (!levelOne || levelOne === "PENDING" || levelOne === "RESUBMIT") {
+        pipeline.PENDING_LEVEL_ONE.push(itemName);
+      } else if (levelOne === "APPROVED" && (!levelTwo || levelTwo === "PENDING" || levelTwo === "RESUBMIT")) {
+        pipeline.PENDING_LEVEL_TWO.push(itemName);
+      } else if (levelTwo === "APPROVED" && (!levelThree || levelThree === "PENDING" || levelThree === "RESUBMIT")) {
+        pipeline.PENDING_LEVEL_THREE.push(itemName);
+      }
     }
   }
 
-  var message = "MULTI-LAYER APPROVAL PIPELINE\n\n";
-  message += "Pending First Layer: " + pipeline.PENDING_FIRST_LAYER.length + "\n";
-  message += "Pending Second Layer: " + pipeline.PENDING_SECOND_LAYER.length + "\n";
-  message += "Pending Third Layer: " + pipeline.PENDING_THIRD_LAYER.length + "\n";
-  message += "Completed: " + pipeline.COMPLETED.length + "\n";
-  message += "Invalid Attachment: " + pipeline.INVALID_ATTACHMENT.length + "\n\n";
+  var message = "📊 MULTI-LAYER APPROVAL PIPELINE\n\n";
+  message += "⏳ PENDING APPROVALS:\n";
+  message += "  • Level One: " + pipeline.PENDING_LEVEL_ONE.length + "\n";
+  message += "  • Level Two: " + pipeline.PENDING_LEVEL_TWO.length + "\n";
+  message += "  • Level Three: " + pipeline.PENDING_LEVEL_THREE.length + "\n\n";
+  
+  message += "✏️ CURRENTLY EDITING:\n";
+  message += "  • Requester: " + pipeline.EDITING_REQUESTER.length + "\n";
+  message += "  • Level One: " + pipeline.EDITING_LEVEL_ONE.length + "\n";
+  message += "  • Level Two: " + pipeline.EDITING_LEVEL_TWO.length + "\n\n";
+  
+  message += "✅ Completed: " + pipeline.COMPLETED.length + "\n";
+  message += "❌ Invalid Attachment: " + pipeline.INVALID_ATTACHMENT.length + "\n\n";
   
   if (pipeline.INVALID_ATTACHMENT.length > 0) {
-    message += "Invalid Attachments:\n";
+    message += "⚠️ INVALID ATTACHMENTS:\n";
     pipeline.INVALID_ATTACHMENT.forEach(function(item) {
-      message += "- " + item + "\n";
+      message += "  • " + item + "\n";
     });
   }
   
   SpreadsheetApp.getUi().alert("Approval Pipeline Dashboard", message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
+// ============================================
+// VALIDATION FUNCTIONS
+// ============================================
+
 function validateAllAttachments() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getRange("A2:N" + sheet.getLastRow()).getValues();
+  var data = sheet.getRange("A2:O" + sheet.getLastRow()).getValues();
   
   var validationResults = {
     valid: 0,
@@ -2083,18 +1681,18 @@ function validateAllAttachments() {
     }
   }
   
-  var message = "ATTACHMENT VALIDATION REPORT\n\n";
-  message += "Valid: " + validationResults.valid + "\n";
-  message += "  - Shared Drive: " + validationResults.sharedDrive + "\n";
-  message += "  - My Drive: " + validationResults.myDrive + "\n";
-  message += "Invalid: " + validationResults.invalid + "\n";
-  message += "Empty: " + validationResults.empty + "\n\n";
+  var message = "📎 ATTACHMENT VALIDATION REPORT\n\n";
+  message += "✅ Valid: " + validationResults.valid + "\n";
+  message += "  • Shared Drive: " + validationResults.sharedDrive + "\n";
+  message += "  • My Drive: " + validationResults.myDrive + "\n";
+  message += "❌ Invalid: " + validationResults.invalid + "\n";
+  message += "⚪ Empty: " + validationResults.empty + "\n\n";
   
   if (validationResults.invalid > 0) {
-    message += "Invalid Attachments Found:\n";
+    message += "⚠️ INVALID ATTACHMENTS FOUND:\n";
     validationResults.details.forEach(function(detail) {
       if (!detail.validation.valid && detail.attachment) {
-        message += "- Row " + detail.row + ": " + detail.project + " - " + detail.validation.message + "\n";
+        message += "• Row " + detail.row + ": " + detail.project + "\n  → " + detail.validation.message + "\n";
       }
     });
   }
@@ -2102,54 +1700,83 @@ function validateAllAttachments() {
   SpreadsheetApp.getUi().alert("Attachment Validation", message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
+// ============================================
+// RESET & UTILITY FUNCTIONS
+// ============================================
+
 function resetMultiLayerRows() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var activeRange = sheet.getActiveRange();
   var startRow = activeRange.getRow();
   
+  if (startRow < 2) {
+    SpreadsheetApp.getUi().alert("Invalid Selection", "Please select rows starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  
+  var confirmation = SpreadsheetApp.getUi().alert(
+    "Confirm Reset",
+    "Are you sure you want to reset " + activeRange.getNumRows() + " row(s)?\n\nThis will:\n• Clear all approval statuses\n• Reset to PENDING state\n• Clear logs and notes\n• Set status to ACTIVE",
+    SpreadsheetApp.getUi().ButtonSet.YES_NO
+  );
+  
+  if (confirmation !== SpreadsheetApp.getUi().Button.YES) {
+    return;
+  }
+  
   for (var i = startRow; i < startRow + activeRange.getNumRows(); i++) {
     if (i >= 2) {
       // Reset checkboxes and status
-      sheet.getRange(i, 6).setValue(false); // Column F - Checkbox
-      sheet.getRange(i, 7).setNote(""); // Column G - Log
-      sheet.getRange(i, 8).setValue("PENDING"); // Column H - FirstLayer
+      sheet.getRange(i, 6).setValue(false); // Column F - Send Checkbox
+      sheet.getRange(i, 7).setValue(""); // Column G - Log
+      sheet.getRange(i, 7).setNote(""); // Clear note
+      
+      // Reset all layer statuses
+      sheet.getRange(i, 8).setValue("PENDING"); // Column H - Level One Status
       sheet.getRange(i, 8).setBackground(null);
-      sheet.getRange(i, 9).setValue("PENDING"); // Column I - Second Layer
+      sheet.getRange(i, 8).setNote("");
+      
+      sheet.getRange(i, 9).setValue("PENDING"); // Column I - Level Two Status
       sheet.getRange(i, 9).setBackground(null);
-      sheet.getRange(i, 10).setValue("PENDING"); // Column J - ThirdLayer
+      sheet.getRange(i, 9).setNote("");
+      
+      sheet.getRange(i, 10).setValue("PENDING"); // Column J - Level Three Status
       sheet.getRange(i, 10).setBackground(null);
-      sheet.getRange(i, 14).setValue("ACTIVE"); // Column N - Status
-      sheet.getRange(i, 14).setBackground(null);
+      sheet.getRange(i, 10).setNote("");
+      
+      // Clear current editor
+      sheet.getRange(i, 14).setValue(""); // Column N - Current Editor
+      
+      // Reset overall status
+      sheet.getRange(i, 15).setValue("ACTIVE"); // Column O - Overall Status
+      sheet.getRange(i, 15).setBackground(null);
     }
   }
   
-  SpreadsheetApp.getUi().alert("Reset Complete", "Selected multi-layer rows have been reset!", SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert("Reset Complete", activeRange.getNumRows() + " row(s) have been reset to PENDING state!", SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
-function testCompleteFlow() {
-  Logger.log("Testing Complete Approval Flow...");
-
-  var testName = "Test User";
-  var testEmail = "test@atreusg.com";
-  var testProject = "Test Project";
-  var testLayer = "FIRST_LAYER";
-  var testCode = "test123";
-
-  var result = updateMultiLayerApprovalStatus(testName, testEmail, testProject, testLayer, testCode);
-
-  if (result) {
-    Logger.log(" Test PASSED");
-    SpreadsheetApp.getUi().alert("Test Result", " Test PASSED - Approval workflow is working!", SpreadsheetApp.getUi().ButtonSet.OK);
-  } else {
-    Logger.log("Test FAILED");
-    SpreadsheetApp.getUi().alert("Test Result", "Test FAILED - Check logs for details.", SpreadsheetApp.getUi().ButtonSet.OK);
+function forceSendNextLayers() {
+  try {
+    Logger.log("Force sending all pending next layers...");
+    sendNextApprovalAfterLevelOne();
+    Utilities.sleep(2000);
+    sendNextApprovalAfterLevelTwo();
+    SpreadsheetApp.getUi().alert("Force Send Complete", "✅ Checked and sent all pending next layer approvals.", SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (error) {
+    Logger.log("❌ Error in forceSendNextLayers: " + error.toString());
+    SpreadsheetApp.getUi().alert("Error", "Force send error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
+
+// ============================================
+// MANUAL APPROVAL FUNCTIONS
+// ============================================
 
 function manualApproveRow(rowNumber, layer) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var rowData = sheet.getRange(rowNumber, 1, 1, 14).getValues()[0];
+    var rowData = sheet.getRange(rowNumber, 1, 1, 15).getValues()[0];
 
     var name = rowData[0];
     var email = rowData[1];
@@ -2159,75 +1786,149 @@ function manualApproveRow(rowNumber, layer) {
     var result = updateMultiLayerApprovalStatus(name, email, project, layer, code);
 
     if (result) {
-      SpreadsheetApp.getUi().alert("Success", "Manual approval completed for " + name + " - Layer: " + layer, SpreadsheetApp.getUi().ButtonSet.OK);
+      SpreadsheetApp.getUi().alert("Success", "✅ Manual approval completed for:\n\n" + name + "\nProject: " + project + "\nLayer: " + getLayerDisplayName(layer), SpreadsheetApp.getUi().ButtonSet.OK);
 
-      if (layer === "FIRST_LAYER") {
-        sendNextApprovalAfterFirstLayer();
-      } else if (layer === "SECOND_LAYER") {
-        sendNextApprovalAfterSecondLayer();
+      // Auto-trigger next layer
+      if (layer === "LEVEL_ONE") {
+        Utilities.sleep(2000);
+        sendNextApprovalAfterLevelOne();
+      } else if (layer === "LEVEL_TWO") {
+        Utilities.sleep(2000);
+        sendNextApprovalAfterLevelTwo();
       }
     } else {
-      SpreadsheetApp.getUi().alert("Failed", "Manual approval failed for " + name + ". Check logs.", SpreadsheetApp.getUi().ButtonSet.OK);
+      SpreadsheetApp.getUi().alert("Failed", "❌ Manual approval failed for " + name + ". Check logs for details.", SpreadsheetApp.getUi().ButtonSet.OK);
     }
 
   } catch (error) {
+    Logger.log("❌ Error in manualApproveRow: " + error.toString());
     SpreadsheetApp.getUi().alert("Error", "Manual approval error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
-function forceSendNextLayers() {
+function manualApproveLevelOne() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var row = sheet.getActiveRange().getRow();
+  if (row < 2) {
+    SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  manualApproveRow(row, "LEVEL_ONE");
+}
+
+function manualApproveLevelTwo() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var row = sheet.getActiveRange().getRow();
+  if (row < 2) {
+    SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  manualApproveRow(row, "LEVEL_TWO");
+}
+
+function manualApproveLevelThree() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var row = sheet.getActiveRange().getRow();
+  if (row < 2) {
+    SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  manualApproveRow(row, "LEVEL_THREE");
+}
+
+// ============================================
+// DEBUG & TEST FUNCTIONS
+// ============================================
+
+function debugCurrentRow() {
   try {
-    sendNextApprovalAfterFirstLayer();
-    Utilities.sleep(2000);
-    sendNextApprovalAfterSecondLayer();
-    SpreadsheetApp.getUi().alert("Force Send Complete", "Checked and sent all pending next layer approvals.", SpreadsheetApp.getUi().ButtonSet.OK);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var row = sheet.getActiveRange().getRow();
+    
+    if (row < 2) {
+      SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    var rowData = sheet.getRange(row, 1, 1, 15).getValues()[0];
+    
+    var debugInfo = "🔍 DEBUG INFO - Row " + row + "\n\n";
+    debugInfo += "👤 REQUESTER INFO:\n";
+    debugInfo += "  • Name: " + (rowData[0] || "Empty") + "\n";
+    debugInfo += "  • Email: " + (rowData[1] || "Empty") + "\n";
+    debugInfo += "  • Project: " + (rowData[2] || "Empty") + "\n";
+    debugInfo += "  • Doc Type: " + (rowData[3] || "Empty") + "\n\n";
+    
+    debugInfo += "📎 ATTACHMENT:\n";
+    debugInfo += "  • URL: " + (rowData[4] || "Empty") + "\n\n";
+    
+    debugInfo += "✅ APPROVAL STATUS:\n";
+    debugInfo += "  • Send Checkbox: " + rowData[5] + "\n";
+    debugInfo += "  • Level One: " + (rowData[7] || "PENDING") + "\n";
+    debugInfo += "  • Level Two: " + (rowData[8] || "PENDING") + "\n";
+    debugInfo += "  • Level Three: " + (rowData[9] || "PENDING") + "\n\n";
+    
+    debugInfo += "📧 APPROVER EMAILS:\n";
+    debugInfo += "  • Level One: " + (rowData[10] || "Empty") + "\n";
+    debugInfo += "  • Level Two: " + (rowData[11] || "Empty") + "\n";
+    debugInfo += "  • Level Three: " + (rowData[12] || "Empty") + "\n\n";
+    
+    debugInfo += "🔄 TRACKING:\n";
+    debugInfo += "  • Current Editor: " + (rowData[13] || "None") + "\n";
+    debugInfo += "  • Overall Status: " + (rowData[14] || "ACTIVE") + "\n";
+    
+    // Validate attachment
+    if (rowData[4]) {
+      var validation = validateGoogleDriveAttachmentWithType(rowData[4], rowData[3]);
+      debugInfo += "\n📋 ATTACHMENT VALIDATION:\n";
+      debugInfo += "  • Valid: " + (validation.valid ? "✅ Yes" : "❌ No") + "\n";
+      debugInfo += "  • Message: " + validation.message + "\n";
+      if (validation.valid) {
+        debugInfo += "  • File: " + validation.name + "\n";
+        debugInfo += "  • Type: " + validation.type + "\n";
+        debugInfo += "  • Size: " + validation.sizeFormatted + "\n";
+        debugInfo += "  • Location: " + validation.driveType + "\n";
+      }
+    }
+    
+    SpreadsheetApp.getUi().alert("Debug Information", debugInfo, SpreadsheetApp.getUi().ButtonSet.OK);
+    
   } catch (error) {
-    SpreadsheetApp.getUi().alert("Error", "Force send error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    Logger.log("❌ Error in debugCurrentRow: " + error.toString());
+    SpreadsheetApp.getUi().alert("Debug Error", "Error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
-function viewLogs() {
-  SpreadsheetApp.getUi().alert("View Logs", "To view logs:\n1. Go to Extensions > Apps Script\n2. Click 'Executions' on left sidebar\n3. See recent runs and logs.", SpreadsheetApp.getUi().ButtonSet.OK);
-}
+function testCompleteFlow() {
+  Logger.log("🧪 Testing Complete Approval Flow...");
 
-function manualApproveFirstLayer() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var row = sheet.getActiveRange().getRow();
-  if (row < 2) {
-    SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
-    return;
-  }
-  manualApproveRow(row, "FIRST_LAYER");
-}
+  var testName = "Test User";
+  var testEmail = "test@atreusg.com";
+  var testProject = "Test Project Flow";
+  var testLayer = "LEVEL_ONE";
+  var testCode = "test_" + new Date().getTime();
 
-function manualApproveSecondLayer() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var row = sheet.getActiveRange().getRow();
-  if (row < 2) {
-    SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
-    return;
-  }
-  manualApproveRow(row, "SECOND_LAYER");
-}
+  var result = updateMultiLayerApprovalStatus(testName, testEmail, testProject, testLayer, testCode);
 
-function manualApproveThirdLayer() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var row = sheet.getActiveRange().getRow();
-  if (row < 2) {
-    SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
-    return;
+  if (result) {
+    Logger.log("✅ Test PASSED - Approval workflow is working!");
+    SpreadsheetApp.getUi().alert("Test Result", "✅ Test PASSED\n\nApproval workflow is working correctly!", SpreadsheetApp.getUi().ButtonSet.OK);
+  } else {
+    Logger.log("❌ Test FAILED - Check logs for details");
+    SpreadsheetApp.getUi().alert("Test Result", "❌ Test FAILED\n\nCheck logs (Extensions > Apps Script > Executions) for details.", SpreadsheetApp.getUi().ButtonSet.OK);
   }
-  manualApproveRow(row, "THIRD_LAYER");
 }
 
 function testRejectionFlow() {
-  Logger.log("Testing Rejection Flow for All Layers...");
+  Logger.log("🧪 Testing Rejection & Send Back Flow...");
   
   var testData = [
-    { layer: "FIRST_LAYER", name: "Test User 1", project: "Test Project First Layer" },
-    { layer: "SECOND_LAYER", name: "Test User 2", project: "Test Project Second Layer" },
-    { layer: "THIRD_LAYER", name: "Test User 3", project: "Test Project Third Layer" }
+    { layer: "LEVEL_ONE", name: "Test User 1", project: "Test Reject L1" },
+    { layer: "LEVEL_TWO", name: "Test User 2", project: "Test Reject L2" },
+    { layer: "LEVEL_THREE", name: "Test User 3", project: "Test Reject L3" }
   ];
+  
+  var results = [];
   
   testData.forEach(function(test) {
     Logger.log("Testing " + test.layer + " rejection...");
@@ -2242,44 +1943,161 @@ function testRejectionFlow() {
     );
     
     if (result) {
-      Logger.log("" + test.layer + " rejection: PASSED");
+      Logger.log("✅ " + test.layer + " rejection: PASSED");
+      results.push("✅ " + test.layer + ": PASSED");
     } else {
-      Logger.log("" + test.layer + " rejection: FAILED");
+      Logger.log("❌ " + test.layer + " rejection: FAILED");
+      results.push("❌ " + test.layer + ": FAILED");
     }
   });
   
-  SpreadsheetApp.getUi().alert(
-    "Rejection Test Complete", 
-    "Check logs for results. Make sure to check:\n" +
-    "1. Status changed to REJECTED\n" + 
-    "2. Subsequent layers reset to PENDING\n" +
-    "3. Background colors updated", 
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
+  var message = "🧪 REJECTION FLOW TEST RESULTS\n\n" + results.join("\n") + "\n\nCheck the spreadsheet for:\n• Status changed to REJECTED\n• Previous layer set to RESUBMIT\n• Current Editor updated\n• Overall Status set to EDITING";
+  
+  SpreadsheetApp.getUi().alert("Test Results", message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
-function onOpen() {
-  var ui = SpreadsheetApp.getUi();
-  ui.createMenu('Multi-Layer Approval')
-    .addItem('Send Multi-Layer Approvals', 'sendMultiLayerApproval')
-    .addItem('Send Second Layer Approval (After First)', 'sendNextApprovalAfterFirstLayer')
-    .addItem('Send Third Layer Approval (After Second)', 'sendNextApprovalAfterSecondLayer')
-    .addItem('Force Send Next Layer (All Pending)', 'forceSendNextLayers')
-    .addSeparator()
-    .addItem('View Approval Pipeline', 'showApprovalPipeline')
-    .addItem('Check Attachment Validation', 'validateAllAttachments')
-    .addItem('Reset Selected Rows', 'resetMultiLayerRows')
-    .addSeparator()
-    .addItem('Test Complete Flow', 'testCompleteFlow')
-    .addItem('Manual Approve Selected Row - First Layer', 'manualApproveFirstLayer')
-    .addItem('Manual Approve Selected Row - Second Layer', 'manualApproveSecondLayer')
-    .addItem('Manual Approve Selected Row - Third Layer', 'manualApproveThirdLayer')
-    .addSeparator()
-    .addItem('Test Rejection Flow (All Layers)', 'testRejectionFlow')
-    .addItem('Debug Current Row', 'debugCurrentRow')
-    .addSeparator()
-    .addItem('View Recent Logs', 'viewLogs')
-    .addToUi();
+function viewLogs() {
+  var message = "📝 VIEW EXECUTION LOGS\n\n";
+  message += "To view detailed logs:\n\n";
+  message += "1. Go to Extensions > Apps Script\n";
+  message += "2. Click 'Executions' on the left sidebar\n";
+  message += "3. View recent runs and their logs\n\n";
+  message += "You can also:\n";
+  message += "• Filter by status (Success/Error)\n";
+  message += "• Search for specific functions\n";
+  message += "• Export logs for analysis";
+  
+  SpreadsheetApp.getUi().alert("View Logs", message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function showAbout() {
+  var message = "🔄 MULTI-LAYER REUSABLE APPROVAL SYSTEM\n\n";
+  message += "Version: 2.0 (Reusable)\n";
+  message += "Updated: " + Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy") + "\n\n";
+  message += "FEATURES:\n";
+  message += "✅ 3-layer approval workflow\n";
+  message += "✅ Reusable rows (no duplication)\n";
+  message += "✅ Send back to previous layer on rejection\n";
+  message += "✅ Resubmit capability after editing\n";
+  message += "✅ Google Drive attachment validation\n";
+  message += "✅ Email notifications with HTML templates\n";
+  message += "✅ Real-time status tracking\n\n";
+  message += "WORKFLOW:\n";
+  message += "• Level One reject → Requester edits\n";
+  message += "• Level Two reject → Level One edits\n";
+  message += "• Level Three reject → Level Two edits\n\n";
+  message += "© 2024 Atreus Global";
+  
+  SpreadsheetApp.getUi().alert("About System", message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function resubmitAfterRevision() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var row = sheet.getActiveRange().getRow();
+    
+    if (row < 2) {
+      SpreadsheetApp.getUi().alert("Error", "Please select a row that needs to be resubmitted.", SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    // Get row data
+    var currentEditor = sheet.getRange(row, 14).getValue(); // Column N - Current Editor
+    var attachment = sheet.getRange(row, 5).getValue(); // Column E - Attachment
+    var documentType = sheet.getRange(row, 4).getValue(); // Column D - Document Type
+    var name = sheet.getRange(row, 1).getValue(); // Column A - Name
+    var email = sheet.getRange(row, 2).getValue(); // Column B - Email
+    var description = sheet.getRange(row, 3).getValue(); // Column C - Description
+    
+    // Validate if user can resubmit
+    if (currentEditor !== "REQUESTER" && currentEditor !== "LEVEL_ONE" && currentEditor !== "LEVEL_TWO") {
+      SpreadsheetApp.getUi().alert("Error", "This row is not currently in edit mode.", SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    // Validate attachment
+    if (!attachment) {
+      SpreadsheetApp.getUi().alert("Error", "Please update the Google Drive link in Column E (Attachment) before resubmitting.", SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    var validation = validateGoogleDriveAttachmentWithType(attachment, documentType);
+    if (!validation.valid) {
+      SpreadsheetApp.getUi().alert("Error", "Invalid Google Drive link. Please check the attachment:\n\n" + validation.message, SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    // Confirmation
+    var ui = SpreadsheetApp.getUi();
+    var response = ui.alert(
+      "Confirm Resubmit",
+      "Are you sure you want to resubmit this document for approval?\n\nThis will:\n• Validate the new attachment\n• Reset the current level status\n• Send for next level review",
+      ui.ButtonSet.YES_NO
+    );
+    
+    if (response !== ui.Button.YES) {
+      return;
+    }
+    
+    // Process resubmit based on current editor
+    if (currentEditor === "REQUESTER") {
+      // Requester resubmitting after Level One rejection
+      sheet.getRange(row, 8).setValue("PENDING"); // Reset Level One status
+      sheet.getRange(row, 8).setBackground(null);
+      sheet.getRange(row, 14).setValue(""); // Clear current editor
+      sheet.getRange(row, 15).setValue("PROCESSING"); // Set overall status
+      sheet.getRange(row, 15).setBackground("#FFF2CC");
+      
+      // Trigger approval process
+      sendMultiLayerApproval();
+      
+    } else if (currentEditor === "LEVEL_ONE") {
+      // Level One resubmitting after Level Two rejection
+      sheet.getRange(row, 9).setValue("PENDING"); // Reset Level Two status
+      sheet.getRange(row, 9).setBackground(null);
+      sheet.getRange(row, 8).setValue("APPROVED"); // Keep Level One as approved
+      sheet.getRange(row, 8).setBackground("#90EE90");
+      sheet.getRange(row, 14).setValue(""); // Clear current editor
+      sheet.getRange(row, 15).setValue("PROCESSING"); // Set overall status
+      sheet.getRange(row, 15).setBackground("#FFF2CC");
+      
+      // Trigger next level approval
+      sendNextApprovalAfterLevelOne();
+      
+    } else if (currentEditor === "LEVEL_TWO") {
+      // Level Two resubmitting after Level Three rejection
+      sheet.getRange(row, 10).setValue("PENDING"); // Reset Level Three status
+      sheet.getRange(row, 10).setBackground(null);
+      sheet.getRange(row, 9).setValue("APPROVED"); // Keep Level Two as approved
+      sheet.getRange(row, 9).setBackground("#90EE90");
+      sheet.getRange(row, 14).setValue(""); // Clear current editor
+      sheet.getRange(row, 15).setValue("PROCESSING"); // Set overall status
+      sheet.getRange(row, 15).setBackground("#FFF2CC");
+      
+      // Trigger next level approval
+      sendNextApprovalAfterLevelTwo();
+    }
+    
+    // Add resubmission note
+    var currentTime = getGMT7Time();
+    var existingNote = sheet.getRange(row, 7).getNote() || "";
+    var resubmitNote = "Resubmitted by " + currentEditor + " on " + currentTime + "\n" + existingNote;
+    sheet.getRange(row, 7).setNote(resubmitNote);
+    
+    SpreadsheetApp.getUi().alert(
+      "Success", 
+      "✅ Document has been resubmitted successfully!\n\nThe approval request will be sent to the next level automatically.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    
+  } catch (error) {
+    Logger.log("❌ Error in resubmitAfterRevision: " + error.toString());
+    SpreadsheetApp.getUi().alert(
+      "Error",
+      "Failed to resubmit: " + error.message + "\n\nPlease try again or contact support.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
 }
 
 // ============================================
@@ -2294,79 +2112,65 @@ function getCellValue(sheet, row, column) {
   }
 }
 
-function sendTestEmail() {
+function getApprovalCodeFromLink(approvalLink) {
+  var match = approvalLink.match(/code=([^&]+)/);
+  return match ? match[1] : "N/A";
+}
+
+// ============================================
+// SCHEDULED TRIGGER FUNCTIONS (OPTIONAL)
+// ============================================
+
+/**
+ * Set up time-based triggers untuk auto-send approval
+ * Jalankan function ini sekali untuk setup trigger
+ */
+function setupAutomationTriggers() {
+  // Delete existing triggers
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(trigger) {
+    ScriptApp.deleteTrigger(trigger);
+  });
+  
+  // Create new trigger: Check every hour for pending approvals
+  ScriptApp.newTrigger('autoCheckPendingApprovals')
+    .timeBased()
+    .everyHours(1)
+    .create();
+  
+  Logger.log("✅ Automation triggers set up successfully");
+  SpreadsheetApp.getUi().alert("Triggers Setup", "✅ Automation triggers have been set up!\n\nThe system will now automatically check for pending approvals every hour.", SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function autoCheckPendingApprovals() {
+  Logger.log("⏰ Auto-check: Running scheduled approval check...");
+  
   try {
-    var testEmail = "test@atreusg.com";
-    var testDescription = "Test Project";
-    var testDocumentType = "ICC";
-    var testAttachment = "https://drive.google.com/file/d/1abc123/view";
-    var testApprovalLink = "https://script.google.com/macros/s/AKfycbwwUmgrdFtYQjx_EuXStjAXy3RPhExlsew1VZc5ZKeWDSlh96c-sm9dkYkL_3-k2Tvf/exec?action=approve&layer=FIRST_LAYER";
-    var testValidation = {
-      valid: true,
-      message: "Valid Google Drive file",
-      name: "test_document.pdf",
-      type: "application/pdf",
-      sizeFormatted: "2.5 MB",
-      isSharedDrive: false
-    };
+    // Send next layer approvals automatically
+    sendNextApprovalAfterLevelOne();
+    Utilities.sleep(2000);
+    sendNextApprovalAfterLevelTwo();
     
-    var result = sendMultiLayerEmail(testEmail, testDescription, testDocumentType, testAttachment, testApprovalLink, "FIRST_LAYER", testValidation);
-    
-    if (result) {
-      Logger.log(" Test email sent successfully");
-      SpreadsheetApp.getUi().alert("Test Email", "Test email sent successfully to " + testEmail, SpreadsheetApp.getUi().ButtonSet.OK);
-    } else {
-      Logger.log("Test email failed");
-      SpreadsheetApp.getUi().alert("Test Email", "Test email failed to send", SpreadsheetApp.getUi().ButtonSet.OK);
-    }
+    Logger.log("✅ Auto-check completed successfully");
   } catch (error) {
-    Logger.log("Test email error: " + error.toString());
-    SpreadsheetApp.getUi().alert("Test Email Error", "Error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    Logger.log("❌ Auto-check error: " + error.toString());
+    sendAdminNotification("Auto-check failed: " + error.message, "Approval System Error");
   }
 }
 
-function debugCurrentRow() {
-  try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var row = sheet.getActiveRange().getRow();
-    
-    if (row < 2) {
-      SpreadsheetApp.getUi().alert("Invalid Row", "Please select a row starting from row 2.", SpreadsheetApp.getUi().ButtonSet.OK);
-      return;
-    }
-    
-    var rowData = sheet.getRange(row, 1, 1, 14).getValues()[0];
-    
-    var debugInfo = "DEBUG INFO - Row " + row + "\n\n";
-    debugInfo += "Name: " + rowData[0] + "\n";
-    debugInfo += "Email: " + rowData[1] + "\n";
-    debugInfo += "Description: " + rowData[2] + "\n";
-    debugInfo += "Document Type: " + rowData[3] + "\n";
-    debugInfo += "Attachment: " + rowData[4] + "\n";
-    debugInfo += "Send Status: " + rowData[5] + "\n";
-    debugInfo += "Log: " + rowData[6] + "\n";
-    debugInfo += "First Layer Status: " + rowData[7] + "\n";
-    debugInfo += "Second Layer Status: " + rowData[8] + "\n";
-    debugInfo += "Third Layer Status: " + rowData[9] + "\n";
-    debugInfo += "First Layer Email: " + rowData[10] + "\n";
-    debugInfo += "Second Layer Email: " + rowData[11] + "\n";
-    debugInfo += "Third Layer Email: " + rowData[12] + "\n";
-    debugInfo += "Overall Status: " + rowData[13] + "\n";
-    
-    // Validate attachment
-    if (rowData[4]) {
-      var validation = validateGoogleDriveAttachmentWithType(rowData[4], rowData[3]);
-      debugInfo += "\nATTACHMENT VALIDATION:\n";
-      debugInfo += "Valid: " + validation.valid + "\n";
-      debugInfo += "Message: " + validation.message + "\n";
-      debugInfo += "File Name: " + (validation.name || "N/A") + "\n";
-      debugInfo += "File Type: " + (validation.type || "N/A") + "\n";
-      debugInfo += "Drive Type: " + (validation.driveType || "N/A") + "\n";
-    }
-    
-    SpreadsheetApp.getUi().alert("Debug Information", debugInfo, SpreadsheetApp.getUi().ButtonSet.OK);
-    
-  } catch (error) {
-    SpreadsheetApp.getUi().alert("Debug Error", "Error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
+/**
+ * Remove all automation triggers
+ */
+function removeAutomationTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(trigger) {
+    ScriptApp.deleteTrigger(trigger);
+  });
+  
+  Logger.log("✅ All automation triggers removed");
+  SpreadsheetApp.getUi().alert("Triggers Removed", "✅ All automation triggers have been removed.", SpreadsheetApp.getUi().ButtonSet.OK);
 }
+
+// ============================================
+// END OF PART 4
+// ============================================
