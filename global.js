@@ -21,19 +21,19 @@ function sendMultiLayerApproval() {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var lastRow = sheet.getLastRow();
-
+    
     if (lastRow < 2) {
       SpreadsheetApp.getUi().alert("No data to process!");
       return;
     }
-
+    
     // Column mapping: A-O (15 columns)
     var dataRange = sheet.getRange("A2:O" + lastRow);
     var data = dataRange.getValues();
-
+    
     var results = [];
     var processedCount = 0;
-
+    
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
       var name = row[0]; // Column A - Name
@@ -50,99 +50,135 @@ function sendMultiLayerApproval() {
       var levelThreeEmail = row[12]; // Column M - Level Three Email
       var currentEditor = row[13]; // Column N - Current Editor
       var overallStatus = row[14]; // Column O - Overall Status
-
+      
       // Skip empty rows
       if (!name || !email) continue;
-
+      
       // Check if send checkbox is checked
-      var isChecked =
-        sendStatus === true || sendStatus === "TRUE" || sendStatus === "true";
-
+      var isChecked = (sendStatus === true || sendStatus === "TRUE" || sendStatus === "true");
+      
       if (isChecked) {
         Logger.log("Processing: " + name + " - " + description);
-
+        Logger.log("Current status - L1: " + levelOneStatus + " | L2: " + levelTwoStatus + " | L3: " + levelThreeStatus);
+        Logger.log("Current Editor: " + currentEditor + " | Overall: " + overallStatus);
+        
         // Validate attachment
-        var validationResult = validateGoogleDriveAttachmentWithType(
-          attachment,
-          documentType
-        );
-
+        var validationResult = validateGoogleDriveAttachmentWithType(attachment, documentType);
+        
         // Determine next approval layer
         var nextApproval = getNextApprovalLayerAndEmail(
-          levelOneStatus,
-          levelTwoStatus,
-          levelThreeStatus,
-          levelOneEmail,
-          levelTwoEmail,
-          levelThreeEmail,
+          levelOneStatus, levelTwoStatus, levelThreeStatus,
+          levelOneEmail, levelTwoEmail, levelThreeEmail,
           currentEditor
         );
-
-        Logger.log(
-          "Next approval: " + nextApproval.layer + " -> " + nextApproval.email
-        );
-
+        
+        Logger.log("Next approval: " + nextApproval.layer + " -> " + nextApproval.email);
+        
+        // CHECK: Apakah ada next approval yang perlu dikirim?
+        var shouldSendApproval = false;
+        
+        // Case 1: Layer belum completed dan ada email approver
         if (nextApproval.layer !== "COMPLETED" && nextApproval.email) {
+          shouldSendApproval = true;
+        }
+        
+        // Case 2: Status RESUBMIT atau EDITING - kirim approval
+        if ((levelOneStatus === "RESUBMIT" || levelOneStatus === "EDITING") && levelOneEmail) {
+          shouldSendApproval = true;
+          nextApproval.layer = "LEVEL_ONE";
+          nextApproval.email = levelOneEmail;
+          nextApproval.isResubmit = true;
+        }
+        
+        if ((levelTwoStatus === "RESUBMIT" || levelTwoStatus === "EDITING") && levelTwoEmail) {
+          shouldSendApproval = true;
+          nextApproval.layer = "LEVEL_TWO";
+          nextApproval.email = levelTwoEmail;
+          nextApproval.isResubmit = true;
+        }
+        
+        if ((levelThreeStatus === "RESUBMIT" || levelThreeStatus === "EDITING") && levelThreeEmail) {
+          shouldSendApproval = true;
+          nextApproval.layer = "LEVEL_THREE";
+          nextApproval.email = levelThreeEmail;
+          nextApproval.isResubmit = true;
+        }
+        
+        // Case 3: Overall status masih EDITING - reset ke PROCESSING
+        if (overallStatus === "EDITING") {
+          sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
+          sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
+          Logger.log("Status changed from EDITING to PROCESSING");
+        }
+        
+        if (shouldSendApproval) {
           var approvalLink = generateMultiLayerApprovalLink(
-            name,
-            email,
-            description,
-            documentType,
-            attachment,
-            nextApproval.layer,
-            "approve"
+            name, email, description, documentType, attachment, 
+            nextApproval.layer, "approve"
           );
-
+          
           var emailSent = sendMultiLayerEmail(
-            nextApproval.email,
-            description,
-            documentType,
-            attachment,
-            approvalLink,
-            nextApproval.layer,
+            nextApproval.email, 
+            description, 
+            documentType, 
+            attachment, 
+            approvalLink, 
+            nextApproval.layer, 
             validationResult,
             nextApproval.isResubmit
           );
-
+          
           if (emailSent) {
             // Update status to PROCESSING
             sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
             sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
-
+            
+            // Clear Current Editor (karena udah dikirim ke approver)
+            sheet.getRange(i + 2, 14).setValue(""); // Column N
+            
+            // Update layer status dari RESUBMIT/EDITING ke PENDING
+            if (nextApproval.layer === "LEVEL_ONE" && (levelOneStatus === "RESUBMIT" || levelOneStatus === "EDITING")) {
+              sheet.getRange(i + 2, 8).setValue("PENDING"); // Column H
+              sheet.getRange(i + 2, 8).setBackground(null);
+            }
+            if (nextApproval.layer === "LEVEL_TWO" && (levelTwoStatus === "RESUBMIT" || levelTwoStatus === "EDITING")) {
+              sheet.getRange(i + 2, 9).setValue("PENDING"); // Column I
+              sheet.getRange(i + 2, 9).setBackground(null);
+            }
+            if (nextApproval.layer === "LEVEL_THREE" && (levelThreeStatus === "RESUBMIT" || levelThreeStatus === "EDITING")) {
+              sheet.getRange(i + 2, 10).setValue("PENDING"); // Column J
+              sheet.getRange(i + 2, 10).setBackground(null);
+            }
+            
             // Log approval link
-            sheet
-              .getRange(i + 2, 7)
-              .setNote(
-                "APPROVAL_LINK_" + nextApproval.layer + ": " + approvalLink
-              );
-
+            sheet.getRange(i + 2, 7).setNote("APPROVAL_LINK_" + nextApproval.layer + ": " + approvalLink + "\nSent: " + getGMT7Time());
+            
             results.push({
               name: name,
               project: description,
               layer: nextApproval.layer,
               status: "Email Sent to: " + nextApproval.email,
-              isResubmit: nextApproval.isResubmit,
+              isResubmit: nextApproval.isResubmit
             });
-
+            
             processedCount++;
-            Logger.log("Approval email sent for: " + name);
+            Logger.log("Approval email sent for: " + name + " (" + (nextApproval.isResubmit ? "RESUBMIT" : "NEW") + ")");
           }
+        } else {
+          Logger.log("No approval needed for: " + name + " (Status: " + overallStatus + ")");
         }
-
+        
         // Reset checkbox after processing
         sheet.getRange(i + 2, 6).setValue(false);
         Utilities.sleep(1000);
       }
     }
-
+    
     showMultiLayerSummary(results, processedCount);
+    
   } catch (error) {
     Logger.log("Error in sendMultiLayerApproval: " + error.toString());
-    SpreadsheetApp.getUi().alert(
-      "System Error",
-      "Error: " + error.message,
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
+    SpreadsheetApp.getUi().alert("System Error", "Error: " + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
