@@ -11,7 +11,7 @@ var DOCUMENT_TYPE_FOLDERS = {
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwJjiTVQOjoH0WGp85eV8jdtsneOa-sv0vG37XY641497eB5ooNaifKOGaa_lJZXKa1/exec";
+  "https://script.google.com/macros/s/AKfycbzMae8EC_sKHuJyDN2oCLMcen_YB0rAZTTKbl7z0dwlW-wBoK8iQP_r3hscjMFZG4I/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -125,7 +125,7 @@ function sendMultiLayerApproval() {
             });
 
             processedCount++;
-            Logger.log("✅ Approval email sent for: " + name);
+            Logger.log("Approval email sent for: " + name);
           }
         }
 
@@ -451,7 +451,7 @@ function sendNextApprovalAfterLevelTwo() {
 
   if (processedCount > 0) {
     Logger.log(
-      "Great, Successfully sent " + processedCount + " Level Three approval emails!"
+      "Successfully sent " + processedCount + " Level Three approval emails!"
     );
   } else {
     Logger.log("No pending Level Three approvals found");
@@ -564,7 +564,7 @@ function validateGoogleDriveAttachmentWithType(attachmentUrl, documentType) {
       var folder = DriveApp.getFolderById(folderId);
 
       // It's a folder! Now validate folder contents
-      Logger.log("✅ Folder detected: " + folder.getName());
+      Logger.log("Folder detected: " + folder.getName());
 
       // Check if folder is in Shared Drive
       var isSharedDrive = false;
@@ -767,7 +767,7 @@ function sendMultiLayerEmail(
     if (attachment && attachment !== "") {
       if (validationResult.valid) {
         var driveTypeInfo = validationResult.isSharedDrive
-          ? '<p><strong>Location:</strong> <span style="color: #3B82F6;">📁 Shared Drive</span></p>'
+          ? '<p><strong>Location:</strong> <span style="color: #3B82F6;">Shared Drive</span></p>'
           : "<p><strong>Location:</strong> My Drive</p>";
 
         // Check if it's a folder
@@ -782,7 +782,7 @@ function sendMultiLayerEmail(
               '<div style="margin-top: 15px;"><h4 style="color: #2E8B57; margin-bottom: 10px;">Folder Contents:</h4><ul style="list-style: none; padding: 0; margin: 0;">';
 
             validationResult.fileList.forEach(function (file) {
-              var fileIcon = "";
+              var fileIcon = "📄";
               if (file.type.includes("image")) fileIcon = "";
               else if (file.type.includes("pdf")) fileIcon = "";
               else if (file.type.includes("document")) fileIcon = "";
@@ -809,7 +809,7 @@ function sendMultiLayerEmail(
           }
 
           attachmentSection =
-            '<div class="attachment-box" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f2ff 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #90EE90;"><h3 style="color: #2E8B57;">📁 Folder Attachment (Validated)</h3>' +
+            '<div class="attachment-box" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f2ff 100%); padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #90EE90;"><h3 style="color: #2E8B57;">Folder Attachment (Validated)</h3>' +
             docTypeBadge +
             "<p><strong>Folder Name:</strong> " +
             validationResult.name +
@@ -825,7 +825,7 @@ function sendMultiLayerEmail(
             fileListHtml +
             '<p style="margin-top: 15px;"><a href="' +
             attachment +
-            '" target="_blank" style="color: white; background: #326BC6; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: 600; display: inline-block;">📂 Open Folder</a></p></div>';
+            '" target="_blank" style="color: white; background: #326BC6; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: 600; display: inline-block;">Open Folder</a></p></div>';
         } else {
           // SINGLE FILE VIEW (original)
           attachmentSection =
@@ -947,10 +947,11 @@ function sendMultiLayerEmail(
       subject: subject,
       htmlBody: htmlBody,
       body: plainBody,
+      name: senderName
     });
 
     Logger.log(
-      "✅ Email sent to: " +
+      "Email sent to: " +
         recipientEmail +
         " for layer: " +
         layerDisplay +
@@ -958,7 +959,7 @@ function sendMultiLayerEmail(
     );
     return true;
   } catch (error) {
-    Logger.log("❌ Error sending email: " + error.toString());
+    Logger.log("Error sending email: " + error.toString());
     return false;
   }
 }
@@ -1046,10 +1047,10 @@ function sendSendBackNotification(
     var rejectedAtLayer = layerDisplayNames[layer] || layer;
     var companyName = "Atreus Global";
 
-    var subject = "📝 Document Revision Required - " + description;
+    var subject = "Document Revision Required - " + description;
 
     var htmlBody =
-      '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>📝 Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' +
+      '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' +
       description +
       "</strong> has been rejected at <strong>" +
       rejectedAtLayer +
@@ -1103,12 +1104,13 @@ function sendSendBackNotification(
       subject: subject,
       htmlBody: htmlBody,
       body: plainBody,
+      name: senderName
     });
 
-    Logger.log("✅ Send back notification sent to: " + recipientEmail);
+    Logger.log("Send back notification sent to: " + recipientEmail);
     return true;
   } catch (error) {
-    Logger.log("❌ Error sending send back notification: " + error.toString());
+    Logger.log("Error sending send back notification: " + error.toString());
     return false;
   }
 }
@@ -1121,9 +1123,9 @@ function sendAdminNotification(message, subject) {
       subject: subject || "Approval System Notification",
       body: message,
     });
-    Logger.log("✅ Admin notification sent");
+    Logger.log("Admin notification sent");
   } catch (error) {
-    Logger.log("❌ Failed to send admin notification: " + error.toString());
+    Logger.log("Failed to send admin notification: " + error.toString());
   }
 }
 
@@ -1157,7 +1159,7 @@ function doGet(e) {
 
     return createErrorPage("Invalid request - missing action parameter");
   } catch (error) {
-    Logger.log("❌ Error in doGet: " + error.toString());
+    Logger.log("Error in doGet: " + error.toString());
     return createErrorPage("System error: " + error.message);
   }
 }
@@ -1192,7 +1194,7 @@ function doPost(e) {
 
     return createErrorPage("Invalid POST request");
   } catch (error) {
-    Logger.log("❌ Error in doPost: " + error.toString());
+    Logger.log("Error in doPost: " + error.toString());
     return createErrorPage("System error: " + error.message);
   }
 }
@@ -1241,7 +1243,7 @@ function handleMultiLayerApproval(params) {
     );
 
     if (updated) {
-      Logger.log("✅ Approval updated successfully");
+      Logger.log("Approval updated successfully");
 
       // Auto-trigger next layer approval
       try {
@@ -1253,7 +1255,7 @@ function handleMultiLayerApproval(params) {
           sendNextApprovalAfterLevelTwo();
         }
       } catch (nextError) {
-        Logger.log("⚠️ Next approval trigger failed: " + nextError.toString());
+        Logger.log("Next approval trigger failed: " + nextError.toString());
       }
 
       return createSuccessPage(
@@ -1271,7 +1273,7 @@ function handleMultiLayerApproval(params) {
       );
     }
   } catch (error) {
-    Logger.log("❌ Error in handleMultiLayerApproval: " + error.toString());
+    Logger.log("Error in handleMultiLayerApproval: " + error.toString());
     return createErrorPage("System error during approval: " + error.message);
   }
 }
@@ -1307,11 +1309,11 @@ function updateMultiLayerApprovalStatus(name, email, project, layer, code) {
       var isEligible = rowStatus === "PROCESSING" || rowStatus === "ACTIVE";
 
       if (projectMatch && isEligible) {
-        Logger.log("✅ MATCH FOUND at row " + (i + 2));
+        Logger.log("MATCH FOUND at row " + (i + 2));
 
         var columnIndex = getLayerColumnIndex(layer);
         if (columnIndex === -1) {
-          Logger.log("❌ Invalid layer: " + layer);
+          Logger.log("Invalid layer: " + layer);
           return false;
         }
 
@@ -1319,7 +1321,7 @@ function updateMultiLayerApprovalStatus(name, email, project, layer, code) {
 
         // Prevent double approval
         if (currentStatus === "APPROVED") {
-          Logger.log("⚠️ Already approved - skipping");
+          Logger.log("Already approved - skipping");
           return false;
         }
 
@@ -1352,21 +1354,21 @@ function updateMultiLayerApprovalStatus(name, email, project, layer, code) {
         ) {
           sheet.getRange(i + 2, 15).setValue("COMPLETED"); // Column O
           sheet.getRange(i + 2, 15).setBackground("#90EE90");
-          Logger.log("🎉 ALL LAYERS APPROVED - COMPLETED");
+          Logger.log("ALL LAYERS APPROVED - COMPLETED");
         } else {
           sheet.getRange(i + 2, 15).setValue("PROCESSING");
           sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
         }
 
-        Logger.log("✅ Approval recorded for: " + layer);
+        Logger.log("Approval recorded for: " + layer);
         return true;
       }
     }
 
-    Logger.log("❌ No matching data found");
+    Logger.log("No matching data found");
     return false;
   } catch (error) {
-    Logger.log("❌ Error updating approval status: " + error.toString());
+    Logger.log("Error updating approval status: " + error.toString());
     return false;
   }
 }
@@ -1426,7 +1428,7 @@ function handleMultiLayerRejection(params) {
       code
     );
   } catch (error) {
-    Logger.log("❌ Error in handleMultiLayerRejection: " + error.toString());
+    Logger.log("Error in handleMultiLayerRejection: " + error.toString());
     return createErrorPage("System error during rejection: " + error.message);
   }
 }
@@ -1461,7 +1463,7 @@ function handleRejectionSubmission(params) {
     );
 
     if (updated) {
-      Logger.log("✅ Rejection recorded successfully");
+      Logger.log("Rejection recorded successfully");
 
       // Send notification ke yang harus edit
       try {
@@ -1475,7 +1477,7 @@ function handleRejectionSubmission(params) {
           rejectionNote
         );
       } catch (notifyError) {
-        Logger.log("⚠️ Notification failed: " + notifyError.toString());
+        Logger.log("Notification failed: " + notifyError.toString());
       }
 
       return createRejectionSuccessPage(
@@ -1488,13 +1490,13 @@ function handleRejectionSubmission(params) {
         rejectionNote
       );
     } else {
-      Logger.log("❌ Rejection failed");
+      Logger.log("Rejection failed");
       return createErrorPage(
         "Rejection failed - data not found in spreadsheet"
       );
     }
   } catch (error) {
-    Logger.log("❌ Error in handleRejectionSubmission: " + error.toString());
+    Logger.log("Error in handleRejectionSubmission: " + error.toString());
     return createErrorPage("System error during rejection: " + error.message);
   }
 }
@@ -1531,7 +1533,7 @@ function updateMultiLayerRejectionStatus(
       var isEligible = rowStatus === "PROCESSING" || rowStatus === "ACTIVE";
 
       if (projectMatch && isEligible) {
-        Logger.log("✅ MATCH FOUND at row " + (i + 2) + " for rejection");
+        Logger.log("MATCH FOUND at row " + (i + 2) + " for rejection");
 
         var columnIndex = getLayerColumnIndex(layer);
         if (columnIndex === -1) return false;
@@ -1539,7 +1541,7 @@ function updateMultiLayerRejectionStatus(
         // Check current status
         var currentStatus = sheet.getRange(i + 2, columnIndex).getValue();
         if (currentStatus === "REJECTED") {
-          Logger.log("⚠️ Already rejected - skipping");
+          Logger.log("Already rejected - skipping");
           return false;
         }
 
@@ -1598,7 +1600,7 @@ function updateMultiLayerRejectionStatus(
           sheet.getRange(i + 2, 9).setBackground("#FFE0B2");
         }
 
-        Logger.log("✅ Rejection recorded - sent back to: " + sendBackTo);
+        Logger.log("Rejection recorded - sent back to: " + sendBackTo);
 
         // Store info untuk notification
         row.sendBackTo = sendBackTo;
@@ -1608,10 +1610,10 @@ function updateMultiLayerRejectionStatus(
       }
     }
 
-    Logger.log("❌ No matching data found for rejection");
+    Logger.log("No matching data found for rejection");
     return false;
   } catch (error) {
-    Logger.log("❌ Error updating rejection status: " + error.toString());
+    Logger.log("Error updating rejection status: " + error.toString());
     return false;
   }
 }
@@ -1675,14 +1677,14 @@ function sendRejectionAndSendBackNotifications(
             rejectionNote,
             sendToName
           );
-          Logger.log("✅ Send back notification sent to: " + sendToEmail);
+          Logger.log("Send back notification sent to: " + sendToEmail);
         }
 
         break;
       }
     }
   } catch (error) {
-    Logger.log("❌ Error sending notifications: " + error.toString());
+    Logger.log("Error sending notifications: " + error.toString());
   }
 }
 
@@ -2105,34 +2107,34 @@ function showRejectionSuccessPage(params) {
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
-  ui.createMenu("🔄 Multi-Layer Approval")
-    .addItem("📤 Send Approvals", "sendMultiLayerApproval")
-    .addItem("📥 Resubmit After Revision", "resubmitAfterRevision")
+  ui.createMenu("Approval Menu")
+    .addItem("Send Approvals", "sendMultiLayerApproval")
+    .addItem("Resubmit After Revision", "resubmitAfterRevision")
     .addSeparator()
     .addItem(
-      "➡️ Force Send Level Two (After Level One)",
+      "Force Send Level Two (After Level One)",
       "sendNextApprovalAfterLevelOne"
     )
     .addItem(
-      "➡️ Force Send Level Three (After Level Two)",
+      "Force Send Level Three (After Level Two)",
       "sendNextApprovalAfterLevelTwo"
     )
-    .addItem("➡️ Force Send All Pending Next Layers", "forceSendNextLayers")
+    .addItem("Force Send All Pending Next Layers", "forceSendNextLayers")
     .addSeparator()
-    .addItem("📊 View Approval Pipeline", "showApprovalPipeline")
-    .addItem("✅ Check Attachment Validation", "validateAllAttachments")
-    .addItem("🔄 Reset Selected Rows", "resetMultiLayerRows")
+    .addItem("View Approval Pipeline", "showApprovalPipeline")
+    .addItem("Check Attachment Validation", "validateAllAttachments")
+    .addItem("Reset Selected Rows", "resetMultiLayerRows")
     .addSeparator()
-    .addItem("🧪 Test Complete Flow", "testCompleteFlow")
-    .addItem("🧪 Test Rejection Flow", "testRejectionFlow")
-    .addItem("🔍 Debug Current Row", "debugCurrentRow")
+    .addItem("Test Complete Flow", "testCompleteFlow")
+    .addItem("Test Rejection Flow", "testRejectionFlow")
+    .addItem("Debug Current Row", "debugCurrentRow")
     .addSeparator()
-    .addItem("⚙️ Manual Approve - Level One", "manualApproveLevelOne")
-    .addItem("⚙️ Manual Approve - Level Two", "manualApproveLevelTwo")
-    .addItem("⚙️ Manual Approve - Level Three", "manualApproveLevelThree")
+    .addItem("Manual Approve - Level One", "manualApproveLevelOne")
+    .addItem("Manual Approve - Level Two", "manualApproveLevelTwo")
+    .addItem("Manual Approve - Level Three", "manualApproveLevelThree")
     .addSeparator()
-    .addItem("📝 View Recent Logs", "viewLogs")
-    .addItem("ℹ️ About System", "showAbout")
+    .addItem("View Recent Logs", "viewLogs")
+    .addItem("About System", "showAbout")
     .addToUi();
 }
 
@@ -2210,23 +2212,23 @@ function showApprovalPipeline() {
     }
   }
 
-  var message = "📊 MULTI-LAYER APPROVAL PIPELINE\n\n";
-  message += "⏳ PENDING APPROVALS:\n";
+  var message = "APPROVAL PIPELINE\n\n";
+  message += "PENDING APPROVALS:\n";
   message += "  • Level One: " + pipeline.PENDING_LEVEL_ONE.length + "\n";
   message += "  • Level Two: " + pipeline.PENDING_LEVEL_TWO.length + "\n";
   message += "  • Level Three: " + pipeline.PENDING_LEVEL_THREE.length + "\n\n";
 
-  message += "✏️ CURRENTLY EDITING:\n";
+  message += "CURRENTLY EDITING:\n";
   message += "  • Requester: " + pipeline.EDITING_REQUESTER.length + "\n";
   message += "  • Level One: " + pipeline.EDITING_LEVEL_ONE.length + "\n";
   message += "  • Level Two: " + pipeline.EDITING_LEVEL_TWO.length + "\n\n";
 
-  message += "✅ Completed: " + pipeline.COMPLETED.length + "\n";
+  message += "Completed: " + pipeline.COMPLETED.length + "\n";
   message +=
-    "❌ Invalid Attachment: " + pipeline.INVALID_ATTACHMENT.length + "\n\n";
+    "Invalid Attachment: " + pipeline.INVALID_ATTACHMENT.length + "\n\n";
 
   if (pipeline.INVALID_ATTACHMENT.length > 0) {
-    message += "⚠️ INVALID ATTACHMENTS:\n";
+    message += "INVALID ATTACHMENTS:\n";
     pipeline.INVALID_ATTACHMENT.forEach(function (item) {
       message += "  • " + item + "\n";
     });
@@ -2290,14 +2292,14 @@ function validateAllAttachments() {
   }
 
   var message = "📎 ATTACHMENT VALIDATION REPORT\n\n";
-  message += "✅ Valid: " + validationResults.valid + "\n";
+  message += "Valid: " + validationResults.valid + "\n";
   message += "  • Shared Drive: " + validationResults.sharedDrive + "\n";
   message += "  • My Drive: " + validationResults.myDrive + "\n";
-  message += "❌ Invalid: " + validationResults.invalid + "\n";
+  message += "Invalid: " + validationResults.invalid + "\n";
   message += "⚪ Empty: " + validationResults.empty + "\n\n";
 
   if (validationResults.invalid > 0) {
-    message += "⚠️ INVALID ATTACHMENTS FOUND:\n";
+    message += "INVALID ATTACHMENTS FOUND:\n";
     validationResults.details.forEach(function (detail) {
       if (!detail.validation.valid && detail.attachment) {
         message +=
@@ -2393,11 +2395,11 @@ function forceSendNextLayers() {
     sendNextApprovalAfterLevelTwo();
     SpreadsheetApp.getUi().alert(
       "Force Send Complete",
-      "✅ Checked and sent all pending next layer approvals.",
+      "Checked and sent all pending next layer approvals.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (error) {
-    Logger.log("❌ Error in forceSendNextLayers: " + error.toString());
+    Logger.log("Error in forceSendNextLayers: " + error.toString());
     SpreadsheetApp.getUi().alert(
       "Error",
       "Force send error: " + error.message,
@@ -2431,7 +2433,7 @@ function manualApproveRow(rowNumber, layer) {
     if (result) {
       SpreadsheetApp.getUi().alert(
         "Success",
-        "✅ Manual approval completed for:\n\n" +
+        "Manual approval completed for:\n\n" +
           name +
           "\nProject: " +
           project +
@@ -2451,12 +2453,12 @@ function manualApproveRow(rowNumber, layer) {
     } else {
       SpreadsheetApp.getUi().alert(
         "Failed",
-        "❌ Manual approval failed for " + name + ". Check logs for details.",
+        "Manual approval failed for " + name + ". Check logs for details.",
         SpreadsheetApp.getUi().ButtonSet.OK
       );
     }
   } catch (error) {
-    Logger.log("❌ Error in manualApproveRow: " + error.toString());
+    Logger.log("Error in manualApproveRow: " + error.toString());
     SpreadsheetApp.getUi().alert(
       "Error",
       "Manual approval error: " + error.message,
@@ -2527,28 +2529,28 @@ function debugCurrentRow() {
 
     var rowData = sheet.getRange(row, 1, 1, 15).getValues()[0];
 
-    var debugInfo = "🔍 DEBUG INFO - Row " + row + "\n\n";
-    debugInfo += "👤 REQUESTER INFO:\n";
+    var debugInfo = "DEBUG INFO - Row " + row + "\n\n";
+    debugInfo += "REQUESTER INFO:\n";
     debugInfo += "  • Name: " + (rowData[0] || "Empty") + "\n";
     debugInfo += "  • Email: " + (rowData[1] || "Empty") + "\n";
     debugInfo += "  • Project: " + (rowData[2] || "Empty") + "\n";
     debugInfo += "  • Doc Type: " + (rowData[3] || "Empty") + "\n\n";
 
-    debugInfo += "📎 ATTACHMENT:\n";
+    debugInfo += "ATTACHMENT:\n";
     debugInfo += "  • URL: " + (rowData[4] || "Empty") + "\n\n";
 
-    debugInfo += "✅ APPROVAL STATUS:\n";
+    debugInfo += "APPROVAL STATUS:\n";
     debugInfo += "  • Send Checkbox: " + rowData[5] + "\n";
     debugInfo += "  • Level One: " + (rowData[7] || "PENDING") + "\n";
     debugInfo += "  • Level Two: " + (rowData[8] || "PENDING") + "\n";
     debugInfo += "  • Level Three: " + (rowData[9] || "PENDING") + "\n\n";
 
-    debugInfo += "📧 APPROVER EMAILS:\n";
+    debugInfo += "APPROVER EMAILS:\n";
     debugInfo += "  • Level One: " + (rowData[10] || "Empty") + "\n";
     debugInfo += "  • Level Two: " + (rowData[11] || "Empty") + "\n";
     debugInfo += "  • Level Three: " + (rowData[12] || "Empty") + "\n\n";
 
-    debugInfo += "🔄 TRACKING:\n";
+    debugInfo += "TRACKING:\n";
     debugInfo += "  • Current Editor: " + (rowData[13] || "None") + "\n";
     debugInfo += "  • Overall Status: " + (rowData[14] || "ACTIVE") + "\n";
 
@@ -2558,9 +2560,9 @@ function debugCurrentRow() {
         rowData[4],
         rowData[3]
       );
-      debugInfo += "\n📋 ATTACHMENT VALIDATION:\n";
+      debugInfo += "\n ATTACHMENT VALIDATION:\n";
       debugInfo +=
-        "  • Valid: " + (validation.valid ? "✅ Yes" : "❌ No") + "\n";
+        "  • Valid: " + (validation.valid ? "Yes" : "No") + "\n";
       debugInfo += "  • Message: " + validation.message + "\n";
       if (validation.valid) {
         debugInfo += "  • File: " + validation.name + "\n";
@@ -2576,7 +2578,7 @@ function debugCurrentRow() {
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (error) {
-    Logger.log("❌ Error in debugCurrentRow: " + error.toString());
+    Logger.log("Error in debugCurrentRow: " + error.toString());
     SpreadsheetApp.getUi().alert(
       "Debug Error",
       "Error: " + error.message,
@@ -2586,7 +2588,7 @@ function debugCurrentRow() {
 }
 
 function testCompleteFlow() {
-  Logger.log("🧪 Testing Complete Approval Flow...");
+  Logger.log("Testing Complete Approval Flow...");
 
   var testName = "Test User";
   var testEmail = "test@atreusg.com";
@@ -2603,24 +2605,24 @@ function testCompleteFlow() {
   );
 
   if (result) {
-    Logger.log("✅ Test PASSED - Approval workflow is working!");
+    Logger.log("Test PASSED - Approval workflow is working!");
     SpreadsheetApp.getUi().alert(
       "Test Result",
-      "✅ Test PASSED\n\nApproval workflow is working correctly!",
+      "Test PASSED\n\nApproval workflow is working correctly!",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
-    Logger.log("❌ Test FAILED - Check logs for details");
+    Logger.log("Test FAILED - Check logs for details");
     SpreadsheetApp.getUi().alert(
       "Test Result",
-      "❌ Test FAILED\n\nCheck logs (Extensions > Apps Script > Executions) for details.",
+      "Test FAILED\n\nCheck logs (Extensions > Apps Script > Executions) for details.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
 }
 
 function testRejectionFlow() {
-  Logger.log("🧪 Testing Rejection & Send Back Flow...");
+  Logger.log("Testing Rejection & Send Back Flow...");
 
   var testData = [
     { layer: "LEVEL_ONE", name: "Test User 1", project: "Test Reject L1" },
@@ -2643,11 +2645,11 @@ function testRejectionFlow() {
     );
 
     if (result) {
-      Logger.log("✅ " + test.layer + " rejection: PASSED");
-      results.push("✅ " + test.layer + ": PASSED");
+      Logger.log("" + test.layer + " rejection: PASSED");
+      results.push("" + test.layer + ": PASSED");
     } else {
-      Logger.log("❌ " + test.layer + " rejection: FAILED");
-      results.push("❌ " + test.layer + ": FAILED");
+      Logger.log("" + test.layer + " rejection: FAILED");
+      results.push("" + test.layer + ": FAILED");
     }
   });
 
@@ -2664,7 +2666,7 @@ function testRejectionFlow() {
 }
 
 function viewLogs() {
-  var message = "📝 VIEW EXECUTION LOGS\n\n";
+  var message = "VIEW EXECUTION LOGS\n\n";
   message += "To view detailed logs:\n\n";
   message += "1. Go to Extensions > Apps Script\n";
   message += "2. Click 'Executions' on the left sidebar\n";
@@ -2682,20 +2684,20 @@ function viewLogs() {
 }
 
 function showAbout() {
-  var message = "🔄 MULTI-LAYER REUSABLE APPROVAL SYSTEM\n\n";
+  var message = "APPROVAL SYSTEM\n\n";
   message += "Version: 2.0 (Reusable)\n";
   message +=
     "Updated: " +
     Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy") +
     "\n\n";
   message += "FEATURES:\n";
-  message += "✅ 3-layer approval workflow\n";
-  message += "✅ Reusable rows (no duplication)\n";
-  message += "✅ Send back to previous layer on rejection\n";
-  message += "✅ Resubmit capability after editing\n";
-  message += "✅ Google Drive attachment validation\n";
-  message += "✅ Email notifications with HTML templates\n";
-  message += "✅ Real-time status tracking\n\n";
+  message += "3-layer approval workflow\n";
+  message += "Reusable rows (no duplication)\n";
+  message += "Send back to previous layer on rejection\n";
+  message += "Resubmit capability after editing\n";
+  message += "Google Drive attachment validation\n";
+  message += "Email notifications with HTML templates\n";
+  message += "Real-time status tracking\n\n";
   message += "WORKFLOW:\n";
   message += "• Level One reject → Requester edits\n";
   message += "• Level Two reject → Level One edits\n";
@@ -2832,11 +2834,11 @@ function resubmitAfterRevision() {
 
     SpreadsheetApp.getUi().alert(
       "Success",
-      "✅ Document has been resubmitted successfully!\n\nThe approval request will be sent to the next level automatically.",
+      "Document has been resubmitted successfully!\n\nThe approval request will be sent to the next level automatically.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (error) {
-    Logger.log("❌ Error in resubmitAfterRevision: " + error.toString());
+    Logger.log("Error in resubmitAfterRevision: " + error.toString());
     SpreadsheetApp.getUi().alert(
       "Error",
       "Failed to resubmit: " +
@@ -2885,16 +2887,16 @@ function setupAutomationTriggers() {
     .everyHours(1)
     .create();
 
-  Logger.log("✅ Automation triggers set up successfully");
+  Logger.log("Automation triggers set up successfully");
   SpreadsheetApp.getUi().alert(
     "Triggers Setup",
-    "✅ Automation triggers have been set up!\n\nThe system will now automatically check for pending approvals every hour.",
+    "Automation triggers have been set up!\n\nThe system will now automatically check for pending approvals every hour.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
 
 function autoCheckPendingApprovals() {
-  Logger.log("⏰ Auto-check: Running scheduled approval check...");
+  Logger.log("Auto-check: Running scheduled approval check...");
 
   try {
     // Send next layer approvals automatically
@@ -2902,9 +2904,9 @@ function autoCheckPendingApprovals() {
     Utilities.sleep(2000);
     sendNextApprovalAfterLevelTwo();
 
-    Logger.log("✅ Auto-check completed successfully");
+    Logger.log("Auto-check completed successfully");
   } catch (error) {
-    Logger.log("❌ Auto-check error: " + error.toString());
+    Logger.log("Auto-check error: " + error.toString());
     sendAdminNotification(
       "Auto-check failed: " + error.message,
       "Approval System Error"
@@ -2921,10 +2923,10 @@ function removeAutomationTriggers() {
     ScriptApp.deleteTrigger(trigger);
   });
 
-  Logger.log("✅ All automation triggers removed");
+  Logger.log("All automation triggers removed");
   SpreadsheetApp.getUi().alert(
     "Triggers Removed",
-    "✅ All automation triggers have been removed.",
+    "All automation triggers have been removed.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
