@@ -11,7 +11,7 @@ var DOCUMENT_TYPE_FOLDERS = {
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbxctB4PBd7WT4XzU4LpF5m7tnuY738RUM98_yxinCwFY3kB4Hya3xWoHF_gjDCWObHF/exec";
+  "https://script.google.com/macros/s/AKfycbwMstsyXQnzzry9obHiP6FwIPg0O5IJuPhcjMeJiq_lbpKyG_gCthW_8iEWqb5ri5Et/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -483,7 +483,7 @@ function sendNextApprovalAfterLevelOne() {
       "Successfully sent " + processedCount + " Level Two approval emails!"
     );
   } else {
-    Logger.log("No pending Level Two approvals found");
+    Logger.log("No pending Level Two approvals found"); 
   }
 }
 
@@ -1110,6 +1110,8 @@ function getProgressBar(currentLayer) {
 
 function sendSendBackNotification(
   recipientEmail,
+  name,
+  email,
   description,
   documentType,
   layer,
@@ -1122,6 +1124,9 @@ function sendSendBackNotification(
       return false;
     }
 
+    // Ensure rejectionNote is a string to prevent replace errors
+    if (!rejectionNote) rejectionNote = "";
+
     var layerDisplayNames = {
       LEVEL_ONE: "Level One",
       LEVEL_TWO: "Level Two",
@@ -1130,7 +1135,7 @@ function sendSendBackNotification(
 
     var rejectedAtLayer = layerDisplayNames[layer] || layer;
     var companyName = "Atreus Global";
-    var senderName = "Atreus Global - Document Revision";
+    var senderName = name;
 
     var subject = "Document Revision Required - " + description;
 
@@ -1314,8 +1319,12 @@ function handleMultiLayerApproval(params) {
       );
     }
 
-    if (!project || !layer) {
-      return createErrorPage("Missing required approval data");
+    if (!layer) {
+      return createErrorPage("Missing layer parameter. Please contact support.");
+    }
+
+    if (!project) {
+      return createErrorPage("Missing project parameter. Please ensure the project name is filled in column C of the spreadsheet.");
     }
 
     // Update approval status
@@ -1795,6 +1804,8 @@ function sendRejectionAndSendBackNotifications(
         if (sendToEmail) {
           sendSendBackNotification(
             sendToEmail,
+            name, // name - not critical for notification
+            email, // email - not critical for notification
             project,
             documentType,
             layer,
@@ -2991,29 +3002,93 @@ function resubmitAfterRevision() {
       // Trigger approval process
       sendMultiLayerApproval();
     } else if (currentEditor === "LEVEL_ONE") {
-      // Level One resubmitting after Level Two rejection
+      // Level One resubmitting after Level Two rejection - directly send to Level Two
       sheet.getRange(row, 9).setValue("PENDING"); // Reset Level Two status
       sheet.getRange(row, 9).setBackground(null);
-      sheet.getRange(row, 8).setValue("APPROVED"); // Keep Level One as approved
-      sheet.getRange(row, 8).setBackground("#90EE90");
       sheet.getRange(row, 14).setValue(""); // Clear current editor
       sheet.getRange(row, 15).setValue("PROCESSING"); // Set overall status
       sheet.getRange(row, 15).setBackground("#FFF2CC");
 
-      // Trigger next level approval
-      sendNextApprovalAfterLevelOne();
+      // Directly send approval to Level Two
+      var levelTwoEmail = sheet.getRange(row, 12).getValue(); // Column L
+      if (levelTwoEmail) {
+        var validationResult = validateGoogleDriveAttachmentWithType(
+          attachment,
+          documentType
+        );
+        var approvalLink = generateMultiLayerApprovalLink(
+          name,
+          email,
+          description,
+          documentType,
+          attachment,
+          "LEVEL_TWO",
+          "approve"
+        );
+        var emailSent = sendMultiLayerEmail(
+          levelTwoEmail,
+          name,
+          email,
+          description,
+          documentType,
+          attachment,
+          approvalLink,
+          "LEVEL_TWO",
+          validationResult,
+          true // isResubmit
+        );
+
+        if (emailSent) {
+          sheet
+            .getRange(row, 7)
+            .setNote("LEVEL_TWO_RESUBMIT_SENT: " + new Date());
+          Logger.log("Level Two resubmit approval sent to: " + levelTwoEmail);
+        }
+      }
     } else if (currentEditor === "LEVEL_TWO") {
-      // Level Two resubmitting after Level Three rejection
+      // Level Two resubmitting after Level Three rejection - directly send to Level Three
       sheet.getRange(row, 10).setValue("PENDING"); // Reset Level Three status
       sheet.getRange(row, 10).setBackground(null);
-      sheet.getRange(row, 9).setValue("APPROVED"); // Keep Level Two as approved
-      sheet.getRange(row, 9).setBackground("#90EE90");
       sheet.getRange(row, 14).setValue(""); // Clear current editor
       sheet.getRange(row, 15).setValue("PROCESSING"); // Set overall status
       sheet.getRange(row, 15).setBackground("#FFF2CC");
 
-      // Trigger next level approval
-      sendNextApprovalAfterLevelTwo();
+      // Directly send approval to Level Three
+      var levelThreeEmail = sheet.getRange(row, 13).getValue(); // Column M
+      if (levelThreeEmail) {
+        var validationResult = validateGoogleDriveAttachmentWithType(
+          attachment,
+          documentType
+        );
+        var approvalLink = generateMultiLayerApprovalLink(
+          name,
+          email,
+          description,
+          documentType,
+          attachment,
+          "LEVEL_THREE",
+          "approve"
+        );
+        var emailSent = sendMultiLayerEmail(
+          levelThreeEmail,
+          name,
+          email,
+          description,
+          documentType,
+          attachment,
+          approvalLink,
+          "LEVEL_THREE",
+          validationResult,
+          true // isResubmit
+        );
+
+        if (emailSent) {
+          sheet
+            .getRange(row, 7)
+            .setNote("LEVEL_THREE_RESUBMIT_SENT: " + new Date());
+          Logger.log("Level Three resubmit approval sent to: " + levelThreeEmail);
+        }
+      }
     }
 
     // Add resubmission note
@@ -3125,6 +3200,84 @@ function removeAutomationTriggers() {
     "All automation triggers have been removed.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+// ============================================
+// AUTO-POPULATE APPROVERS BASED ON DOC TYPE
+// ============================================
+
+function onEdit(e) {
+  try {
+    var sheet = e.source.getActiveSheet();
+    var range = e.range;
+    
+    // Only run on main approval sheet (not on config sheet)
+    if (sheet.getName() === "Approver Config") return;
+    
+    // Check if Document Type column (D) was edited
+    if (range.getColumn() === 4 && range.getRow() >= 2) { // Column D, row 2+
+      var documentType = range.getValue();
+      var row = range.getRow();
+      
+      Logger.log("Document Type changed to: " + documentType + " at row " + row);
+      
+      // Get approvers from config sheet
+      var approvers = getApproversForDocType(documentType);
+      
+      if (approvers) {
+        // Auto-populate Level One, Two, Three emails
+        sheet.getRange(row, 11).setValue(approvers.levelOne); // Column K
+        sheet.getRange(row, 12).setValue(approvers.levelTwo); // Column L
+        sheet.getRange(row, 13).setValue(approvers.levelThree); // Column M
+        
+        // Lock the email columns (read-only)
+        var emailRange = sheet.getRange(row, 11, 1, 3); // K, L, M
+        emailRange.setBackground("#E8F4F8"); // Light blue background
+        emailRange.setNote("Auto-populated based on Document Type: " + documentType);
+        
+        Logger.log("Approvers auto-populated for " + documentType);
+      } else {
+        Logger.log("No approvers found for: " + documentType);
+      }
+    }
+  } catch (error) {
+    Logger.log("Error in onEdit: " + error.toString());
+  }
+}
+
+function getApproversForDocType(documentType) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var configSheet = ss.getSheetByName("Approver Config");
+    
+    if (!configSheet) {
+      Logger.log("Approver Config sheet not found!");
+      return null;
+    }
+    
+    var data = configSheet.getRange("A2:D" + configSheet.getLastRow()).getValues();
+    
+    for (var i = 0; i < data.length; i++) {
+      var row = data[i];
+      var docType = row[0]; // Column A
+      
+      if (docType && docType.toString().trim().toLowerCase() === documentType.toString().trim().toLowerCase()) {
+        Logger.log("Found approvers for: " + documentType);
+        return {
+          levelOne: row[1],   // Column B
+          levelTwo: row[2],   // Column C
+          levelThree: row[3]  // Column D
+        };
+      }
+    }
+    
+    Logger.log("No matching document type found: " + documentType);
+    return null;
+    
+  } catch (error) {
+    Logger.log("Error getting approvers: " + error.toString());
+    return null;
+  }
 }
 
 // ============================================
