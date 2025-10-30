@@ -11,7 +11,7 @@ var DOCUMENT_TYPE_FOLDERS = {
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwMstsyXQnzzry9obHiP6FwIPg0O5IJuPhcjMeJiq_lbpKyG_gCthW_8iEWqb5ri5Et/exec";
+  "https://script.google.com/macros/s/AKfycbzOIN-wBQLThA8qopB4OVID1wC9R27gqMp9RXL_GKKLbE7y720SsFPhyDiPHzfAUVao/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -106,9 +106,26 @@ function sendMultiLayerApproval() {
           (levelOneStatus === "RESUBMIT" || levelOneStatus === "EDITING") &&
           levelOneEmail
         ) {
+          Logger.log("🔄 Level One is EDITING - Auto-approving and sending to Level Two");
+          
+          // AUTO-APPROVE Level One (karena dia yang revisi)
+          sheet.getRange(i + 2, 8).setValue("APPROVED"); // Column H - Level One
+          sheet.getRange(i + 2, 8).setBackground("#90EE90");
+          sheet.getRange(i + 2, 8).setNote("Auto-approved after revision - " + getGMT7Time());
+          
+          // Clear Current Editor
+          sheet.getRange(i + 2, 14).setValue(""); // Column N
+          
+          // Set Overall Status to PROCESSING
+          sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
+          sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
+          
+          SpreadsheetApp.flush();
+          
+          // Skip Level One, langsung ke Level Two
           shouldSendApproval = true;
-          nextApproval.layer = "LEVEL_ONE";
-          nextApproval.email = levelOneEmail;
+          nextApproval.layer = "LEVEL_TWO";
+          nextApproval.email = levelTwoEmail;
           nextApproval.isResubmit = true;
         }
 
@@ -116,9 +133,26 @@ function sendMultiLayerApproval() {
           (levelTwoStatus === "RESUBMIT" || levelTwoStatus === "EDITING") &&
           levelTwoEmail
         ) {
+          Logger.log("🔄 Level Two is EDITING - Auto-approving and sending to Level Three");
+          
+          // AUTO-APPROVE Level Two (karena dia yang revisi)
+          sheet.getRange(i + 2, 9).setValue("APPROVED"); // Column I - Level Two
+          sheet.getRange(i + 2, 9).setBackground("#90EE90");
+          sheet.getRange(i + 2, 9).setNote("Auto-approved after revision - " + getGMT7Time());
+          
+          // Clear Current Editor
+          sheet.getRange(i + 2, 14).setValue(""); // Column N
+          
+          // Set Overall Status to PROCESSING
+          sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
+          sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
+          
+          SpreadsheetApp.flush();
+          
+          // Skip Level Two, langsung ke Level Three
           shouldSendApproval = true;
-          nextApproval.layer = "LEVEL_TWO";
-          nextApproval.email = levelTwoEmail;
+          nextApproval.layer = "LEVEL_THREE";
+          nextApproval.email = levelThreeEmail;
           nextApproval.isResubmit = true;
         }
 
@@ -504,9 +538,19 @@ function sendNextApprovalAfterLevelTwo() {
       (!levelThreeStatus ||
         levelThreeStatus === "" ||
         levelThreeStatus === "PENDING" ||
-        levelThreeStatus === "RESUBMIT") &&
+        levelThreeStatus === "RESUBMIT" ||
+        levelThreeStatus === "REJECTED") &&  // ADD THIS
       overallStatus === "PROCESSING"
     ) {
+      Logger.log("Found eligible for Level Three approval: " + row[0]);
+      
+      // If Level Three was REJECTED, reset to PENDING first
+      if (levelThreeStatus === "REJECTED") {
+        Logger.log("Resetting Level Three from REJECTED to PENDING");
+        sheet.getRange(i + 2, 10).setValue("PENDING"); // Column J
+        sheet.getRange(i + 2, 10).setBackground(null);
+        SpreadsheetApp.flush();
+      }
       Logger.log("Found eligible for Level Three approval: " + row[0]);
 
       var levelThreeEmail = row[12]; // Column M
@@ -1124,8 +1168,19 @@ function sendSendBackNotification(
       return false;
     }
 
-    // Ensure rejectionNote is a string to prevent replace errors
-    if (!rejectionNote) rejectionNote = "";
+    // FIX: Ensure rejectionNote is ALWAYS a string
+    if (!rejectionNote) {
+      rejectionNote = "No specific reason provided.";
+    }
+    
+    // Convert to string and sanitize
+    rejectionNote = String(rejectionNote).trim();
+    
+    if (rejectionNote === "" || rejectionNote === "null" || rejectionNote === "undefined") {
+      rejectionNote = "No specific reason provided.";
+    }
+    
+    Logger.log("📝 Rejection note (sanitized): " + rejectionNote);
 
     var layerDisplayNames = {
       LEVEL_ONE: "Level One",
@@ -1135,12 +1190,15 @@ function sendSendBackNotification(
 
     var rejectedAtLayer = layerDisplayNames[layer] || layer;
     var companyName = "Atreus Global";
-    var senderName = name;
+    var senderName = name || "Approval System";
 
     var subject = "Document Revision Required - " + description;
 
+    // Safe replace untuk newlines
+    var rejectionNoteHtml = rejectionNote.replace(/\n/g, "<br>");
+
     var htmlBody =
-      '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' +
+      '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>🔄 Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' +
       description +
       "</strong> has been rejected at <strong>" +
       rejectedAtLayer +
@@ -1152,9 +1210,9 @@ function sendSendBackNotification(
       (rejectorName || rejectedAtLayer + " Approver") +
       "</p><p><strong>Date:</strong> " +
       getGMT7Time() +
-      '</p></div><div class="rejection-box"><h3 style="color:#92400E;margin-top:0;">Rejection Feedback:</h3><p style="margin:0;color:#78350F;">' +
-      rejectionNote.replace(/\n/g, "<br>") +
-      '</p></div><p><strong>Next Steps:</strong></p><ol><li>Review the feedback above</li><li>Make necessary revisions to the document</li><li>Update the attachment link in the spreadsheet</li><li>Check the "Send" checkbox to resubmit for approval</li></ol><p style="color:#92400E;"><em>The approval will automatically continue from where it was rejected after you resubmit.</em></p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' +
+      '</p></div><div class="rejection-box"><h3 style="color:#92400E;margin-top:0;">📋 Rejection Feedback:</h3><p style="margin:0;color:#78350F;white-space:pre-wrap;">' +
+      rejectionNoteHtml +
+      '</p></div><p><strong>Next Steps:</strong></p><ol><li>Review the feedback above</li><li>Make necessary revisions to the document</li><li>Update the attachment link in the spreadsheet</li><li>Use the <strong>"Resubmit After Revision"</strong> menu to resubmit for approval</li></ol><p style="color:#92400E;background:#FEF3C7;padding:15px;border-radius:5px;"><strong>⚠️ Important:</strong><br>The approval will automatically continue from where it was rejected after you resubmit.</p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' +
       new Date().getFullYear() +
       " " +
       companyName +
@@ -1184,7 +1242,7 @@ function sendSendBackNotification(
       "1. Review the feedback above\n" +
       "2. Make necessary revisions\n" +
       "3. Update the attachment link in the spreadsheet\n" +
-      "4. Check the 'Send' checkbox to resubmit\n\n" +
+      "4. Use 'Resubmit After Revision' menu to resubmit\n\n" +
       "This is an automated email from " +
       companyName +
       ".";
@@ -1194,13 +1252,15 @@ function sendSendBackNotification(
       subject: subject,
       htmlBody: htmlBody,
       body: plainBody,
-      name: senderName,
+      name: companyName + " - Approval System",
     });
 
-    Logger.log("Send back notification sent to: " + recipientEmail);
+    Logger.log("✅ Send back notification sent successfully to: " + recipientEmail);
     return true;
+    
   } catch (error) {
-    Logger.log("Error sending send back notification: " + error.toString());
+    Logger.log("❌ Error sending send back notification: " + error.toString());
+    Logger.log("Stack trace: " + error.stack);
     return false;
   }
 }
@@ -1715,16 +1775,34 @@ function updateMultiLayerRejectionStatus(
           sendBackTo = "REQUESTER";
           sendBackEmail = row[1]; // Column B - Requester Email
           
+          Logger.log("🎯 Level One rejected - sending to REQUESTER");
+          Logger.log("Requester email: " + sendBackEmail);
+          
+          if (!sendBackEmail || sendBackEmail.indexOf("@") === -1) {
+            Logger.log("⚠️ WARNING: Invalid requester email!");
+            // Coba baca dari sheet langsung sebagai backup
+            sendBackEmail = sheet.getRange(i + 2, 2).getValue();
+            Logger.log("Backup read email: " + sendBackEmail);
+          }
+          
           sheet.getRange(i + 2, 14).setValue("REQUESTER"); // Column N - Current Editor
           sheet.getRange(i + 2, 15).setValue("EDITING"); // Column O - Overall Status
           sheet.getRange(i + 2, 15).setBackground("#FFE0B2");
-          
-          // Level One stays REJECTED, no reset needed
           
         } else if (layer === "LEVEL_TWO") {
           // Rejected at Level Two → send back to LEVEL ONE
           sendBackTo = "LEVEL_ONE";
           sendBackEmail = row[10]; // Column K - Level One Email
+          
+          Logger.log("🎯 Level Two rejected - sending to LEVEL ONE");
+          Logger.log("Level One email: " + sendBackEmail);
+          
+          if (!sendBackEmail || sendBackEmail.indexOf("@") === -1) {
+            Logger.log("⚠️ WARNING: Invalid Level One email!");
+            // Coba baca dari sheet langsung sebagai backup
+            sendBackEmail = sheet.getRange(i + 2, 11).getValue();
+            Logger.log("Backup read email: " + sendBackEmail);
+          }
           
           sheet.getRange(i + 2, 14).setValue("LEVEL_ONE"); // Column N - Current Editor
           sheet.getRange(i + 2, 15).setValue("EDITING"); // Column O - Overall Status
@@ -1738,6 +1816,16 @@ function updateMultiLayerRejectionStatus(
           // Rejected at Level Three → send back to LEVEL TWO
           sendBackTo = "LEVEL_TWO";
           sendBackEmail = row[11]; // Column L - Level Two Email
+          
+          Logger.log("🎯 Level Three rejected - sending to LEVEL TWO");
+          Logger.log("Level Two email: " + sendBackEmail);
+          
+          if (!sendBackEmail || sendBackEmail.indexOf("@") === -1) {
+            Logger.log("⚠️ WARNING: Invalid Level Two email!");
+            // Coba baca dari sheet langsung sebagai backup
+            sendBackEmail = sheet.getRange(i + 2, 12).getValue();
+            Logger.log("Backup read email: " + sendBackEmail);
+          }
           
           sheet.getRange(i + 2, 14).setValue("LEVEL_TWO"); // Column N - Current Editor
           sheet.getRange(i + 2, 15).setValue("EDITING"); // Column O - Overall Status
@@ -2356,7 +2444,6 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("Approval Menu")
     .addItem("Send Approvals", "sendMultiLayerApproval")
-    .addItem("Resubmit After Revision", "resubmitAfterRevision")
     .addSeparator()
     .addItem(
       "Force Send Level Two (After Level One)",
