@@ -11,7 +11,7 @@ var DOCUMENT_TYPE_FOLDERS = {
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbzOIN-wBQLThA8qopB4OVID1wC9R27gqMp9RXL_GKKLbE7y720SsFPhyDiPHzfAUVao/exec";
+  "https://script.google.com/macros/s/AKfycbyvOeYcqtuP25AwwkgzUyxFNsju8RYXO7scwkpWW-KMb26hdhNeRI8juiVybqaAyutF/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -106,7 +106,7 @@ function sendMultiLayerApproval() {
           (levelOneStatus === "RESUBMIT" || levelOneStatus === "EDITING") &&
           levelOneEmail
         ) {
-          Logger.log("🔄 Level One is EDITING - Auto-approving and sending to Level Two");
+          Logger.log("Level One is EDITING - Auto-approving and sending to Level Two");
           
           // AUTO-APPROVE Level One (karena dia yang revisi)
           sheet.getRange(i + 2, 8).setValue("APPROVED"); // Column H - Level One
@@ -133,7 +133,7 @@ function sendMultiLayerApproval() {
           (levelTwoStatus === "RESUBMIT" || levelTwoStatus === "EDITING") &&
           levelTwoEmail
         ) {
-          Logger.log("🔄 Level Two is EDITING - Auto-approving and sending to Level Three");
+          Logger.log("Level Two is EDITING - Auto-approving and sending to Level Three");
           
           // AUTO-APPROVE Level Two (karena dia yang revisi)
           sheet.getRange(i + 2, 9).setValue("APPROVED"); // Column I - Level Two
@@ -1180,7 +1180,7 @@ function sendSendBackNotification(
       rejectionNote = "No specific reason provided.";
     }
     
-    Logger.log("📝 Rejection note (sanitized): " + rejectionNote);
+    Logger.log("Rejection note (sanitized): " + rejectionNote);
 
     var layerDisplayNames = {
       LEVEL_ONE: "Level One",
@@ -1190,7 +1190,7 @@ function sendSendBackNotification(
 
     var rejectedAtLayer = layerDisplayNames[layer] || layer;
     var companyName = "Atreus Global";
-    var senderName = name || "Approval System";
+    var senderName = name;
 
     var subject = "Document Revision Required - " + description;
 
@@ -1198,7 +1198,7 @@ function sendSendBackNotification(
     var rejectionNoteHtml = rejectionNote.replace(/\n/g, "<br>");
 
     var htmlBody =
-      '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>🔄 Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' +
+      '<!DOCTYPE html><html><head><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");body{font-family:"Inter",sans-serif;line-height:1.6;color:#333;background:#f6f9fc;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1)}.header{background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);padding:30px;text-align:center;color:white}.content{padding:30px}.rejection-box{background:#FEF3C7;border-left:4px solid #F59E0B;padding:20px;border-radius:8px;margin:20px 0}.info-box{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;border-left:4px solid #F59E0B}.footer{margin-top:30px;padding:20px;background:#f8f9fa;text-align:center;font-size:12px;color:#666}</style></head><body><div class="container"><div class="header"><h1>Revision Required</h1><p>Document has been sent back for editing</p></div><div class="content"><p>Hello,</p><p>The document <strong>' +
       description +
       "</strong> has been rejected at <strong>" +
       rejectedAtLayer +
@@ -1210,7 +1210,7 @@ function sendSendBackNotification(
       (rejectorName || rejectedAtLayer + " Approver") +
       "</p><p><strong>Date:</strong> " +
       getGMT7Time() +
-      '</p></div><div class="rejection-box"><h3 style="color:#92400E;margin-top:0;">📋 Rejection Feedback:</h3><p style="margin:0;color:#78350F;white-space:pre-wrap;">' +
+      '</p></div><div class="rejection-box"><h3 style="color:#92400E;margin-top:0;">Rejection Feedback:</h3><p style="margin:0;color:#78350F;white-space:pre-wrap;">' +
       rejectionNoteHtml +
       '</p></div><p><strong>Next Steps:</strong></p><ol><li>Review the feedback above</li><li>Make necessary revisions to the document</li><li>Update the attachment link in the spreadsheet</li><li>Use the <strong>"Resubmit After Revision"</strong> menu to resubmit for approval</li></ol><p style="color:#92400E;background:#FEF3C7;padding:15px;border-radius:5px;"><strong>⚠️ Important:</strong><br>The approval will automatically continue from where it was rejected after you resubmit.</p></div><div class="footer"><p>This is an automated email. Please do not reply.</p><p>© ' +
       new Date().getFullYear() +
@@ -1252,7 +1252,7 @@ function sendSendBackNotification(
       subject: subject,
       htmlBody: htmlBody,
       body: plainBody,
-      name: companyName + " - Approval System",
+      name: senderName,
     });
 
     Logger.log("✅ Send back notification sent successfully to: " + recipientEmail);
