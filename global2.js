@@ -13,7 +13,7 @@ var DOCUMENT_TYPES = ["ICC", "Commercial Proposal", "MCSA"];
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbxBaMx4lSqRoSLn0lu5T9sIoG1GrolDHlmz8fEGUQ6wiQm5xPEuL2b6c2DoPVuHO0Z6/exec";
+  "https://script.google.com/macros/s/AKfycbwF0FkRnYijFWJc7Z-F_wx63JakklpwgGM3fqSn9pAe9FEyX0C3Sk89qowtVTAod54A/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -352,7 +352,6 @@ function getNextApprovalLayerAndEmail(
   // fallback aman
   return { layer: "LEVEL_ONE", email: levelOneEmail };
 }
-
 
 // ============================================
 // GENERATE APPROVAL LINK
@@ -863,7 +862,7 @@ function sendMultiLayerEmail(
         ICC: "#3B82F6",
         "Commercial Proposal": "#10B981",
         MCSA: "#F59E0B",
-        };
+      };
       var badgeColor = docTypeColors[documentType] || "#6B7280";
       docTypeBadge =
         '<div style="display: inline-block; background: ' +
@@ -967,7 +966,6 @@ function sendMultiLayerEmail(
           '" target="_blank" style="color: #326BC6;">Check Link</a></p><p style="font-size: 12px; color: #666;"><em>Please ensure the Google Drive link is correct and accessible</em></p></div>';
       }
     }
-
 
     // Generate rejection link
     var rejectLink = generateMultiLayerApprovalLink(
@@ -1686,7 +1684,9 @@ function updateMultiLayerRejectionStatus(
             .setBackground("#FFE0B2");
           sheet.getRange(i + 2, 9).setValue(""); // Column I - Clear Level Two
           sheet.getRange(i + 2, 9).setBackground(null);
-          sheet.getRange(i + 2, 9).setNote("Reset after Level 3 rejection - " + getGMT7Time());
+          sheet
+            .getRange(i + 2, 9)
+            .setNote("Reset after Level 3 rejection - " + getGMT7Time());
         }
 
         SpreadsheetApp.flush();
@@ -1764,7 +1764,10 @@ function sendRejectionAndSendBackNotifications(
           // L3 → LEVEL ONE (FLOW BARU)
           sendToEmail = levelOneEmail;
           sendToName = "Level One Approver";
-          Logger.log("Sending notification to LEVEL ONE (from Level Three): " + sendToEmail);
+          Logger.log(
+            "Sending notification to LEVEL ONE (from Level Three): " +
+              sendToEmail
+          );
         }
 
         if (sendToEmail && sendToEmail.indexOf("@") !== -1) {
@@ -1846,7 +1849,7 @@ function createRejectionForm(
       ICC: "#3B82F6",
       "Commercial Proposal": "#10B981",
       MCSA: "#F59E0B",
-      };
+    };
     var badgeColor = docTypeColors[documentType] || "#6B7280";
     docTypeBadge =
       '<div style="display: inline-block; background: ' +
@@ -2946,8 +2949,116 @@ function resubmitAfterRevision() {
       // Trigger approval process
       sendMultiLayerApproval();
     } else if (currentEditor === "LEVEL_ONE") {
-      // Level One resubmitting after Level Two rejection
-      Logger.log("Level One resubmitting after Level Three rejection");
+      // Check if this is from Level 3 rejection or Level 2 rejection
+      var levelThreeStatus = sheet.getRange(row, 10).getValue(); // Column J
+      var levelTwoStatus = sheet.getRange(row, 9).getValue(); // Column I
+
+      Logger.log(
+        "Level One resubmit - L2 status: " +
+          levelTwoStatus +
+          " | L3 status: " +
+          levelThreeStatus
+      );
+
+      // ===== CASE 1: Level 3 rejection (L3 = REJECTED, L2 = empty) =====
+      if (levelThreeStatus === "REJECTED" && levelTwoStatus === "") {
+        Logger.log(
+          "Level One resubmitting after Level Three rejection - sending to Level Two first"
+        );
+
+        var levelTwoEmail = sheet.getRange(row, 12).getValue(); // Column L
+
+        if (!levelTwoEmail) {
+          SpreadsheetApp.getUi().alert(
+            "Error",
+            "Level Two email not found. Cannot resubmit.",
+            SpreadsheetApp.getUi().ButtonSet.OK
+          );
+          return;
+        }
+
+        // Reset Level Two status to PENDING
+        sheet.getRange(row, 9).setValue("PENDING"); // Column I - Level Two
+        sheet.getRange(row, 9).setBackground(null);
+
+        // Keep Level One as APPROVED (already revised)
+        sheet.getRange(row, 8).setValue("APPROVED"); // Column H
+        sheet.getRange(row, 8).setBackground("#90EE90");
+        sheet
+          .getRange(row, 8)
+          .setNote(
+            "Revised and auto-approved (from L3 rejection) - " + getGMT7Time()
+          );
+
+        // Clear current editor
+        sheet.getRange(row, 14).setValue(""); // Column N
+
+        // Set overall status to PROCESSING
+        sheet.getRange(row, 15).setValue("PROCESSING"); // Column O
+        sheet.getRange(row, 15).setBackground("#FFF2CC");
+
+        SpreadsheetApp.flush();
+
+        // Send approval to Level Two (NOT Level Three!)
+        var validationResult = validateGoogleDriveAttachmentWithType(
+          attachment,
+          documentType
+        );
+        var approvalLink = generateMultiLayerApprovalLink(
+          name,
+          email,
+          description,
+          documentType,
+          attachment,
+          "LEVEL_TWO",
+          "approve"
+        );
+        var emailSent = sendMultiLayerEmail(
+          levelTwoEmail,
+          name,
+          email,
+          description,
+          documentType,
+          attachment,
+          approvalLink,
+          "LEVEL_TWO",
+          validationResult,
+          true // isResubmit
+        );
+
+        if (emailSent) {
+          sheet
+            .getRange(row, 7)
+            .setNote(
+              "LEVEL_TWO_RESUBMIT_SENT (from L3 rejection): " + getGMT7Time()
+            );
+          Logger.log(
+            "✅ Level Two approval sent (after L3 rejection) to: " +
+              levelTwoEmail
+          );
+
+          SpreadsheetApp.getUi().alert(
+            "Success",
+            "Document resubmitted successfully to Level Two!\n\n(Level 3 will review after Level 2 approves)\n\nApproval email sent to: " +
+              levelTwoEmail,
+            SpreadsheetApp.getUi().ButtonSet.OK
+          );
+        } else {
+          Logger.log("❌ Failed to send resubmit email");
+          SpreadsheetApp.getUi().alert(
+            "Error",
+            "Failed to send resubmit email. Please try again.",
+            SpreadsheetApp.getUi().ButtonSet.OK
+          );
+        }
+
+        return; // Exit function
+      }
+
+      // ===== CASE 2: Level 2 rejection (normal flow) =====
+      Logger.log(
+        "Level One resubmitting to Level Two (normal L2 rejection flow)"
+      );
 
       var levelTwoEmail = sheet.getRange(row, 12).getValue(); // Column L
 
@@ -2967,86 +3078,9 @@ function resubmitAfterRevision() {
       // Clear Level One EDITING status back to APPROVED
       sheet.getRange(row, 8).setValue("APPROVED"); // Column H
       sheet.getRange(row, 8).setBackground("#90EE90");
-      sheet.getRange(row, 8).setNote("Revised and auto-approved - " + getGMT7Time());
-
-      // Clear current editor
-      sheet.getRange(row, 14).setValue(""); // Column N
-
-      // Set overall status to PROCESSING
-      sheet.getRange(row, 15).setValue("PROCESSING"); // Column O
-      sheet.getRange(row, 15).setBackground("#FFF2CC");
-
-      SpreadsheetApp.flush();
-
-      // Send approval to Level Two
-      var validationResult = validateGoogleDriveAttachmentWithType(
-        attachment,
-        documentType
-      );
-      var approvalLink = generateMultiLayerApprovalLink(
-        name,
-        email,
-        description,
-        documentType,
-        attachment,
-        "LEVEL_TWO",
-        "approve"
-      );
-      var emailSent = sendMultiLayerEmail(
-        levelTwoEmail,
-        name,
-        email,
-        description,
-        documentType,
-        attachment,
-        approvalLink,
-        "LEVEL_TWO",
-        validationResult,
-        true // isResubmit
-      );
-
-      if (emailSent) {
-        sheet
-          .getRange(row, 7)
-          .setNote("LEVEL_TWO_RESUBMIT_SENT: " + getGMT7Time());
-        Logger.log("Level Two resubmit approval sent to: " + levelTwoEmail);
-
-        SpreadsheetApp.getUi().alert(
-          "Success",
-          "Document resubmitted successfully to Level Two!\n\nApproval email sent to: " +
-            levelTwoEmail,
-          SpreadsheetApp.getUi().ButtonSet.OK
-        );
-      } else {
-        Logger.log("❌ Failed to send resubmit email");
-        SpreadsheetApp.getUi().alert(
-          "Error",
-          "Failed to send resubmit email. Please try again.",
-          SpreadsheetApp.getUi().ButtonSet.OK
-        );
-      }
-    } else if (currentEditor === "LEVEL_TWO") {
-      // Level Two resubmitting after Level Three rejection
-      Logger.log("Level Two resubmitting to Level Three");
-
-      var levelThreeEmail = sheet.getRange(row, 13).getValue(); // Column M
-
-      if (!levelThreeEmail) {
-        SpreadsheetApp.getUi().alert(
-          "Error",
-          "Level Three email not found. Cannot resubmit.",
-          SpreadsheetApp.getUi().ButtonSet.OK
-        );
-        return;
-      }
-
-      // Reset Level Three status
-      sheet.getRange(row, 10).setValue("PENDING"); // Column J - Level Three
-      sheet.getRange(row, 10).setBackground(null);
-
-      // Clear Level Two EDITING status back to APPROVED
-      sheet.getRange(row, 9).setValue("APPROVED"); // Column I
-      sheet.getRange(row, 9).setBackground("#90EE90");
+      sheet
+        .getRange(row, 8)
+        .setNote("Revised and auto-approved - " + getGMT7Time());
 
       // Clear current editor
       sheet.getRange(row, 14).setValue(""); // Column N
