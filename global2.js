@@ -4,16 +4,16 @@
 // ============================================
 
 var DOCUMENT_TYPE_FOLDERS = {
-  ICC: "1JFJPfirJuCvZuSEKe6KwRXuupRI0hyyb",
-  "Commercial Proposal": "1QVTM_oTSQow9N0e1jNIAc-ADK0qvTwtz",
-  MCSA: "1QVTM_oTSQow9N0e1jNIAc-ADK0qvTwtz",
+  // ICC: "1JFJPfirJuCvZuSEKe6KwRXuupRI0hyyb",
+  // "Commercial Proposal": "1QVTM_oTSQow9N0e1jNIAc-ADK0qvTwtz",
+  // MCSA: "1QVTM_oTSQow9N0e1jNIAc-ADK0qvTwtz",
 };
 
 var DOCUMENT_TYPES = ["ICC", "Commercial Proposal", "MCSA"];
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwegp4GtNkoipbjNcqzgcy0vC9GkwONXb6WI-XbkeVkVVfzIrBXC_TU_je_SI_wG-oR/exec";
+  "https://script.google.com/macros/s/AKfycbxBaMx4lSqRoSLn0lu5T9sIoG1GrolDHlmz8fEGUQ6wiQm5xPEuL2b6c2DoPVuHO0Z6/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -317,8 +317,8 @@ function getNextApprovalLayerAndEmail(
     return { layer: "LEVEL_ONE", email: levelOneEmail, isResubmit: true };
   }
 
-  // ✅ L3 reject → Level One (FLOW BARU)
-  if (currentEditor === "LEVEL_TWO" && levelThree === "REJECTED") {
+  // L3 reject → Level One (FIXED)
+  if (currentEditor === "LEVEL_ONE" && levelThree === "REJECTED") {
     return { layer: "LEVEL_ONE", email: levelOneEmail, isResubmit: true };
   }
 
@@ -1671,7 +1671,7 @@ function updateMultiLayerRejectionStatus(
             .setValue("EDITING")
             .setBackground("#FFE0B2");
         } else if (layer === "LEVEL_THREE") {
-          // L3 → LEVEL ONE ✅ (UPDATED FLOW)
+          // L3 → LEVEL ONE (UPDATED FLOW)
           sendBackTo = "LEVEL_ONE";
           sendBackEmail = row[10];
 
