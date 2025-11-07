@@ -1684,6 +1684,9 @@ function updateMultiLayerRejectionStatus(
             .getRange(i + 2, 8)
             .setValue("EDITING")
             .setBackground("#FFE0B2");
+          sheet.getRange(i + 2, 9).setValue(""); // Column I - Clear Level Two
+          sheet.getRange(i + 2, 9).setBackground(null);
+          sheet.getRange(i + 2, 9).setNote("Reset after Level 3 rejection - " + getGMT7Time());
         }
 
         SpreadsheetApp.flush();
@@ -2944,7 +2947,7 @@ function resubmitAfterRevision() {
       sendMultiLayerApproval();
     } else if (currentEditor === "LEVEL_ONE") {
       // Level One resubmitting after Level Two rejection
-      Logger.log("Level One resubmitting to Level Two");
+      Logger.log("Level One resubmitting after Level Three rejection");
 
       var levelTwoEmail = sheet.getRange(row, 12).getValue(); // Column L
 
@@ -2964,6 +2967,7 @@ function resubmitAfterRevision() {
       // Clear Level One EDITING status back to APPROVED
       sheet.getRange(row, 8).setValue("APPROVED"); // Column H
       sheet.getRange(row, 8).setBackground("#90EE90");
+      sheet.getRange(row, 8).setNote("Revised and auto-approved - " + getGMT7Time());
 
       // Clear current editor
       sheet.getRange(row, 14).setValue(""); // Column N
@@ -3005,7 +3009,7 @@ function resubmitAfterRevision() {
         sheet
           .getRange(row, 7)
           .setNote("LEVEL_TWO_RESUBMIT_SENT: " + getGMT7Time());
-        Logger.log("✅ Level Two resubmit approval sent to: " + levelTwoEmail);
+        Logger.log("Level Two resubmit approval sent to: " + levelTwoEmail);
 
         SpreadsheetApp.getUi().alert(
           "Success",
@@ -3064,7 +3068,7 @@ function resubmitAfterRevision() {
         description,
         documentType,
         attachment,
-        "LEVEL_THREE",
+        "LEVEL_TWO",
         "approve"
       );
       var emailSent = sendMultiLayerEmail(
@@ -3075,7 +3079,7 @@ function resubmitAfterRevision() {
         documentType,
         attachment,
         approvalLink,
-        "LEVEL_THREE",
+        "LEVEL_TWO",
         validationResult,
         true // isResubmit
       );
@@ -3083,14 +3087,14 @@ function resubmitAfterRevision() {
       if (emailSent) {
         sheet
           .getRange(row, 7)
-          .setNote("LEVEL_THREE_RESUBMIT_SENT: " + getGMT7Time());
+          .setNote("LEVEL_TWO_RESUBMIT_SENT: " + getGMT7Time());
         Logger.log(
-          "✅ Level Three resubmit approval sent to: " + levelThreeEmail
+          "✅ Level Two approval approval sent to: " + levelThreeEmail
         );
 
         SpreadsheetApp.getUi().alert(
           "Success",
-          "Document resubmitted successfully to Level Three!\n\nApproval email sent to: " +
+          "Document resubmitted successfully to Level Two!\n\n(Level 3 will review after Level 2 approves)\n\nApproval email sent to: " +
             levelThreeEmail,
           SpreadsheetApp.getUi().ButtonSet.OK
         );
@@ -3102,6 +3106,8 @@ function resubmitAfterRevision() {
           SpreadsheetApp.getUi().ButtonSet.OK
         );
       }
+
+      return;
     }
 
     // Add resubmission note
