@@ -13,7 +13,7 @@ var DOCUMENT_TYPES = ["ICC", "Commercial Proposal", "MCSA"];
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwF0FkRnYijFWJc7Z-F_wx63JakklpwgGM3fqSn9pAe9FEyX0C3Sk89qowtVTAod54A/exec";
+  "https://script.google.com/macros/s/AKfycbxIVUSNZJ1_bvRZNDY1_vlSyUGyVtlGhSNp0RE6Y3teETN3JIz5Nfu-afkCalDXEUE-/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -95,7 +95,7 @@ function sendMultiLayerApproval() {
           "Next approval: " + nextApproval.layer + " -> " + nextApproval.email
         );
 
-        // CHECK: Apakah ada next approval yang perlu dikirim?
+        // CHECK: Apakah ada next approval yang perlu dikirim
         var shouldSendApproval = false;
 
         // Case 1: Layer belum completed dan ada email approver
@@ -104,77 +104,44 @@ function sendMultiLayerApproval() {
         }
 
         // Case 2: Status RESUBMIT atau EDITING - kirim approval
-        if (
-          (levelOneStatus === "RESUBMIT" || levelOneStatus === "EDITING") &&
-          levelOneEmail
-        ) {
-          Logger.log(
-            "Level One is EDITING - Auto-approving and sending to Level Two"
-          );
+        var isFullResetFromLevelThree =
+          levelOneStatus === "" &&
+          levelTwoStatus === "" &&
+          levelThreeStatus === "REJECTED" &&
+          overallStatus === "EDITING";
+        
+        if (!isFullResetFromLevelThree) {
 
-          // AUTO-APPROVE Level One (karena dia yang revisi)
-          sheet.getRange(i + 2, 8).setValue("APPROVED"); // Column H - Level One
-          sheet.getRange(i + 2, 8).setBackground("#90EE90");
-          sheet
-            .getRange(i + 2, 8)
-            .setNote("Auto-approved after revision - " + getGMT7Time());
+           if ((levelOneStatus === "RESUBMIT" || levelOneStatus === "EDITING") && levelOneEmail) {
+                Logger.log("Level One is EDITING - Auto-approving and sending to Level Two");
 
-          // Clear Current Editor
-          sheet.getRange(i + 2, 14).setValue(""); // Column N
+                sheet.getRange(i + 2, 8).setValue("APPROVED").setBackground("#90EE90");
+                sheet.getRange(i + 2, 8).setNote("Auto-approved after revision - " + getGMT7Time());
 
-          // Set Overall Status to PROCESSING
-          sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
-          sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
+                sheet.getRange(i + 2, 14).setValue(""); 
+                sheet.getRange(i + 2, 15).setValue("PROCESSING").setBackground("#FFF2CC");
 
-          SpreadsheetApp.flush();
+                nextApproval.layer = "LEVEL_TWO";
+                nextApproval.email = levelTwoEmail;
+                nextApproval.isResubmit = true;
+                shouldSendApproval = true;
+             }
 
-          // Skip Level One, langsung ke Level Two
-          shouldSendApproval = true;
-          nextApproval.layer = "LEVEL_TWO";
-          nextApproval.email = levelTwoEmail;
-          nextApproval.isResubmit = true;
-        }
-
-        if (
-          (levelTwoStatus === "RESUBMIT" || levelTwoStatus === "EDITING") &&
-          levelTwoEmail
-        ) {
-          Logger.log(
-            "Level Two is EDITING - Auto-approving and sending to Level Three"
-          );
-
-          // AUTO-APPROVE Level Two (karena dia yang revisi)
-          sheet.getRange(i + 2, 9).setValue("APPROVED"); // Column I - Level Two
-          sheet.getRange(i + 2, 9).setBackground("#90EE90");
-          sheet
-            .getRange(i + 2, 9)
-            .setNote("Auto-approved after revision - " + getGMT7Time());
-
-          // Clear Current Editor
-          sheet.getRange(i + 2, 14).setValue(""); // Column N
-
-          // Set Overall Status to PROCESSING
-          sheet.getRange(i + 2, 15).setValue("PROCESSING"); // Column O
-          sheet.getRange(i + 2, 15).setBackground("#FFF2CC");
-
-          SpreadsheetApp.flush();
-
-          // Skip Level Two, langsung ke Level Three
-          shouldSendApproval = true;
-          nextApproval.layer = "LEVEL_THREE";
-          nextApproval.email = levelThreeEmail;
-          nextApproval.isResubmit = true;
-        }
-
-        if (
-          (levelThreeStatus === "RESUBMIT" || levelThreeStatus === "EDITING") &&
-          levelThreeEmail
-        ) {
-          shouldSendApproval = true;
-          nextApproval.layer = "LEVEL_THREE";
-          nextApproval.email = levelThreeEmail;
-          nextApproval.isResubmit = true;
-        }
+          if ((levelTwoStatus === "RESUBMIT" || levelTwoStatus === "EDITING") && levelTwoEmail) {
+                Logger.log("Level Two is EDITING - Auto-approving and sending to Level Three");
+        
+                sheet.getRange(i + 2, 9).setValue("APPROVED").setBackground("#90EE90");
+                sheet.getRange(i + 2, 9).setNote("Auto-approved after revision - " + getGMT7Time());
+        
+                sheet.getRange(i + 2, 14).setValue(""); 
+                sheet.getRange(i + 2, 15).setValue("PROCESSING").setBackground("#FFF2CC");
+        
+                nextApproval.layer = "LEVEL_THREE";
+                nextApproval.email = levelThreeEmail;
+                nextApproval.isResubmit = true;
+                shouldSendApproval = true;
+             }
+         }
 
         // Case 3: Overall status masih EDITING - reset ke PROCESSING
         if (overallStatus === "EDITING") {
@@ -229,14 +196,6 @@ function sendMultiLayerApproval() {
             ) {
               sheet.getRange(i + 2, 9).setValue("PENDING"); // Column I
               sheet.getRange(i + 2, 9).setBackground(null);
-            }
-            if (
-              nextApproval.layer === "LEVEL_THREE" &&
-              (levelThreeStatus === "RESUBMIT" ||
-                levelThreeStatus === "EDITING")
-            ) {
-              sheet.getRange(i + 2, 10).setValue("PENDING"); // Column J
-              sheet.getRange(i + 2, 10).setBackground(null);
             }
 
             // Log approval link
@@ -411,6 +370,17 @@ function sendNextApprovalAfterLevelOne() {
     var levelTwoStatus = row[8]; // Column I
     var overallStatus = row[14]; // Column O
 
+    var isFullReset =
+      row[7] === "" &&   // L1
+      row[8] === "" &&   // L2
+      row[9] === "" &&   // L3
+      row[14] === "EDITING";  // Overall
+
+    if (isFullReset) {
+        Logger.log("STOP auto-trigger: full reset detected, skip sending next approval");
+        continue;
+    }
+
     if (
       levelOneStatus === "APPROVED" &&
       (!levelTwoStatus ||
@@ -489,13 +459,23 @@ function sendNextApprovalAfterLevelTwo() {
     var levelThreeStatus = row[9]; // Column J
     var overallStatus = row[14]; // Column O
 
+    var isFullReset =
+      row[7] === "" &&   // L1
+      row[8] === "" &&   // L2
+      row[9] === "" &&   // L3
+      row[14] === "EDITING";  // Overall
+
+    if (isFullReset) {
+        Logger.log("STOP auto-trigger: full reset detected, skip sending next approval");
+        continue;
+    }
+
     if (
       levelTwoStatus === "APPROVED" &&
       (!levelThreeStatus ||
         levelThreeStatus === "" ||
         levelThreeStatus === "PENDING" ||
-        levelThreeStatus === "RESUBMIT" ||
-        levelThreeStatus === "REJECTED") && // ADD THIS
+        levelThreeStatus === "RESUBMIT") && // ADD THIS
       overallStatus === "PROCESSING"
     ) {
       Logger.log("Found eligible for Level Three approval: " + row[0]);
@@ -1678,14 +1658,11 @@ function updateMultiLayerRejectionStatus(
             .getRange(i + 2, 15)
             .setValue("EDITING")
             .setBackground("#FFE0B2");
+          sheet.getRange(i + 2, 8).setValue("").setBackground(null);  // L1
+          sheet.getRange(i + 2, 9).setValue("").setBackground(null);  // L2
+          sheet.getRange(i + 2, 10).setValue("").setBackground("#FF6B6B"); // L3
           sheet
             .getRange(i + 2, 8)
-            .setValue("EDITING")
-            .setBackground("#FFE0B2");
-          sheet.getRange(i + 2, 9).setValue(""); // Column I - Clear Level Two
-          sheet.getRange(i + 2, 9).setBackground(null);
-          sheet
-            .getRange(i + 2, 9)
             .setNote("Reset after Level 3 rejection - " + getGMT7Time());
         }
 
