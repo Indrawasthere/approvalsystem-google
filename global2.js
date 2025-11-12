@@ -514,7 +514,7 @@ function sendNextApprovalAfterLevelTwo() {
           "LEVEL_THREE",
           "approve"
         );
-        var isResubmit = levelThreeStatus === "RESUBMIT";
+        var isResubmit = (levelThreeStatus === "RESUBMIT" || levelThreeStatus === "PENDING");
         var emailSent = sendMultiLayerEmail(
           levelThreeEmail,
           name,
