@@ -481,6 +481,11 @@ function sendNextApprovalAfterLevelTwo() {
     ) {
       Logger.log("Found eligible for Level Three approval: " + row[0]);
 
+      SpreadsheetApp.flush();
+
+      levelThreeStatus = sheet.getRange(i + 2, 10).getValue();
+      Logger.log("Fresh Level Three status: " + levelThreeStatus);
+
       // If Level Three was REJECTED, reset to PENDING first
       if (levelThreeStatus === "REJECTED") {
         Logger.log("Resetting Level Three from REJECTED to PENDING");
