@@ -475,7 +475,8 @@ function sendNextApprovalAfterLevelTwo() {
       (!levelThreeStatus ||
         levelThreeStatus === "" ||
         levelThreeStatus === "PENDING" ||
-        levelThreeStatus === "RESUBMIT") && // ADD THIS
+        levelThreeStatus === "RESUBMIT" ||
+        levelThreeStatus === "REJECTED") && // ADD THIS
       overallStatus === "PROCESSING"
     ) {
       Logger.log("Found eligible for Level Three approval: " + row[0]);
@@ -485,7 +486,10 @@ function sendNextApprovalAfterLevelTwo() {
         Logger.log("Resetting Level Three from REJECTED to PENDING");
         sheet.getRange(i + 2, 10).setValue("PENDING"); // Column J
         sheet.getRange(i + 2, 10).setBackground(null);
+        sheet.getRange(i + 2, 10).setNote("Re-review after revision - " + getGMT7Time());
         SpreadsheetApp.flush();
+
+        levelThreeStatus = "PENDING";
       }
       Logger.log("Found eligible for Level Three approval: " + row[0]);
 
