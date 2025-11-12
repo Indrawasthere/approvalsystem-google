@@ -459,6 +459,7 @@ function sendNextApprovalAfterLevelTwo() {
     var levelThreeStatus = row[9]; // Column J
     var overallStatus = row[14]; // Column O
 
+    // Skip full reset cases (Level 1 editing after Level 3 rejection)
     var isFullReset =
       row[7] === "" &&   // L1
       row[8] === "" &&   // L2
@@ -470,33 +471,37 @@ function sendNextApprovalAfterLevelTwo() {
         continue;
     }
 
+    // Check if Level Two is approved and Level Three needs review
     if (
       levelTwoStatus === "APPROVED" &&
       (!levelThreeStatus ||
         levelThreeStatus === "" ||
         levelThreeStatus === "PENDING" ||
         levelThreeStatus === "RESUBMIT" ||
-        levelThreeStatus === "REJECTED") && // ADD THIS
+        levelThreeStatus === "REJECTED") && // Include REJECTED status
       overallStatus === "PROCESSING"
     ) {
       Logger.log("Found eligible for Level Three approval: " + row[0]);
 
+      // ✅ CRITICAL FIX: Force refresh to get latest Level Three status
       SpreadsheetApp.flush();
 
       levelThreeStatus = sheet.getRange(i + 2, 10).getValue();
       Logger.log("Fresh Level Three status: " + levelThreeStatus);
 
-      // If Level Three was REJECTED, reset to PENDING first
+      // ✅ CRITICAL FIX: Reset Level Three from REJECTED to PENDING
       if (levelThreeStatus === "REJECTED") {
-        Logger.log("Resetting Level Three from REJECTED to PENDING");
+        Logger.log("🔄 Resetting Level Three from REJECTED to PENDING");
         sheet.getRange(i + 2, 10).setValue("PENDING"); // Column J
         sheet.getRange(i + 2, 10).setBackground(null);
         sheet.getRange(i + 2, 10).setNote("Re-review after revision - " + getGMT7Time());
         SpreadsheetApp.flush();
 
+        // Update local variable so email sending proceeds
         levelThreeStatus = "PENDING";
       }
-      Logger.log("Found eligible for Level Three approval: " + row[0]);
+
+      Logger.log("Proceeding to send Level Three approval...");
 
       var levelThreeEmail = row[12]; // Column M
       var name = row[0];
@@ -519,7 +524,10 @@ function sendNextApprovalAfterLevelTwo() {
           "LEVEL_THREE",
           "approve"
         );
+        
+        // Mark as resubmit if coming from REJECTED or RESUBMIT status
         var isResubmit = (levelThreeStatus === "RESUBMIT" || levelThreeStatus === "PENDING");
+        
         var emailSent = sendMultiLayerEmail(
           levelThreeEmail,
           name,
@@ -537,20 +545,24 @@ function sendNextApprovalAfterLevelTwo() {
           sheet
             .getRange(i + 2, 7)
             .setNote("LEVEL_THREE_APPROVAL_SENT: " + new Date());
-          Logger.log("Level Three approval email sent to: " + levelThreeEmail);
+          Logger.log("✅ Level Three approval email sent to: " + levelThreeEmail);
           processedCount++;
           Utilities.sleep(1000);
+        } else {
+          Logger.log("❌ Failed to send Level Three approval email");
         }
+      } else {
+        Logger.log("⚠️ Level Three email is missing for row " + (i + 2));
       }
     }
   }
 
   if (processedCount > 0) {
     Logger.log(
-      "Successfully sent " + processedCount + " Level Three approval emails!"
+      "✅ Successfully sent " + processedCount + " Level Three approval emails!"
     );
   } else {
-    Logger.log("No pending Level Three approvals found");
+    Logger.log("ℹ️ No pending Level Three approvals found");
   }
 }
 
