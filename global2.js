@@ -13,7 +13,7 @@ var DOCUMENT_TYPES = ["ICC", "Commercial Proposal", "MCSA"];
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbxIVUSNZJ1_bvRZNDY1_vlSyUGyVtlGhSNp0RE6Y3teETN3JIz5Nfu-afkCalDXEUE-/exec";
+  "https://script.google.com/macros/s/AKfycbwyAEqWWp_w1JiHQqiWam0dWx3m3F_aPTduT-aBzRnKwzIDsOROpocz9NztGcgXXFYR/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -1658,12 +1658,15 @@ function updateMultiLayerRejectionStatus(
             .getRange(i + 2, 15)
             .setValue("EDITING")
             .setBackground("#FFE0B2");
-          sheet.getRange(i + 2, 8).setValue("").setBackground(null);  // L1
-          sheet.getRange(i + 2, 9).setValue("").setBackground(null);  // L2
-          sheet.getRange(i + 2, 10).setValue("").setBackground("#FF6B6B"); // L3
+          sheet.getRange(i + 2, 8).setValue("EDITING").setBackground("#FFE0B2");  // L1
+          sheet.getRange(i + 2, 9).setValue("PENDING").setBackground(null);   // L2
+          sheet.getRange(i + 2, 10).setValue("REJECTED").setBackground("#FF6B6B"); // L3
           sheet
             .getRange(i + 2, 8)
-            .setNote("Reset after Level 3 rejection - " + getGMT7Time());
+            .setNote("Editing after Level 3 rejection - will resubmit to L2 - " + getGMT7Time());
+          sheet
+            .getRange(i + 2, 9)
+            .setNote("Pending resubmit from Level 1 - " + getGMT7Time());
         }
 
         SpreadsheetApp.flush();
@@ -2938,7 +2941,7 @@ function resubmitAfterRevision() {
       );
 
       // ===== CASE 1: Level 3 rejection (L3 = REJECTED, L2 = empty) =====
-      if (levelThreeStatus === "REJECTED" && levelTwoStatus === "") {
+      if (levelThreeStatus === "REJECTED" && (levelTwoStatus === "PENDING" || levelTwoStatus === "")) {
         Logger.log(
           "Level One resubmitting after Level Three rejection - sending to Level Two first"
         );
@@ -2959,13 +2962,17 @@ function resubmitAfterRevision() {
         sheet.getRange(row, 9).setBackground(null);
 
         // Keep Level One as APPROVED (already revised)
-        sheet.getRange(row, 8).setValue("APPROVED"); // Column H
+        sheet.getRange(row, 8).setValue("APPROVED");
         sheet.getRange(row, 8).setBackground("#90EE90");
         sheet
           .getRange(row, 8)
           .setNote(
             "Revised and auto-approved (from L3 rejection) - " + getGMT7Time()
           );
+        
+        sheet.getRange(row, 9).setValue("PENDING");
+        sheet.getRange(row, 9).setBackground(null);
+        sheet.getRange(row, 9).setNote("Awaiting approval after L1 revision - " + getGMT7Time());
 
         // Clear current editor
         sheet.getRange(row, 14).setValue(""); // Column N
@@ -3033,9 +3040,10 @@ function resubmitAfterRevision() {
       }
 
       // ===== CASE 2: Level 2 rejection (normal flow) =====
-      Logger.log(
-        "Level One resubmitting to Level Two (normal L2 rejection flow)"
-      );
+      if (levelTwoStatus === "REJECTED" || (levelTwoStatus === "PENDING" && levelThreeStatus !== "REJECTED")) {
+        Logger.log(
+          "Level One resubmitting to Level Two (normal L2 rejection flow)"
+        );
 
       var levelTwoEmail = sheet.getRange(row, 12).getValue(); // Column L
 
@@ -3083,7 +3091,7 @@ function resubmitAfterRevision() {
         "approve"
       );
       var emailSent = sendMultiLayerEmail(
-        levelThreeEmail,
+        levelTwoEmail,
         name,
         email,
         description,
@@ -3100,7 +3108,7 @@ function resubmitAfterRevision() {
           .getRange(row, 7)
           .setNote("LEVEL_TWO_RESUBMIT_SENT: " + getGMT7Time());
         Logger.log(
-          "✅ Level Two approval approval sent to: " + levelThreeEmail
+          "✅ Level Two approval approval sent to: " + levelTwoEmail
         );
 
         SpreadsheetApp.getUi().alert(
@@ -3120,6 +3128,9 @@ function resubmitAfterRevision() {
 
       return;
     }
+    
+    return;
+  }
 
     // Add resubmission note
     var currentTime = getGMT7Time();
