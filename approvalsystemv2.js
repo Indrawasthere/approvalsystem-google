@@ -13,7 +13,7 @@ var DOCUMENT_TYPES = ["ICC", "Commercial Proposal", "MCSA"];
 
 // GANTI INI DENGAN WEB APP URL LU
 var WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbwyAEqWWp_w1JiHQqiWam0dWx3m3F_aPTduT-aBzRnKwzIDsOROpocz9NztGcgXXFYR/exec";
+  "https://script.google.com/macros/s/AKfycbzq6kvAggX6Jxu8oGfT3TrEN0ds8MOdvi3wGJHCeVw5kfOD-_zTJVh-aPmGVSyg8Syb/exec";
 
 // ============================================
 // MAIN APPROVAL SENDER
@@ -479,7 +479,7 @@ function sendNextApprovalAfterLevelTwo() {
         levelThreeStatus === "PENDING" ||
         levelThreeStatus === "RESUBMIT" ||
         levelThreeStatus === "REJECTED") && // Include REJECTED status
-      overallStatus === "PROCESSING"
+      (overallStatus === "PROCESSING" || overallStatus === "EDITING")
     ) {
       Logger.log("Found eligible for Level Three approval: " + row[0]);
 
@@ -1053,21 +1053,26 @@ function sendMultiLayerEmail(
       companyName +
       ".";
 
-    MailApp.sendEmail({
-      to: recipientEmail,
-      subject: subject,
-      htmlBody: htmlBody,
-      body: plainBody,
-      name: senderName,
-    });
-
-    Logger.log(
-      "Email sent to: " +
-        recipientEmail +
-        " for layer: " +
-        layerDisplay +
-        (isResubmit ? " (Resubmit)" : "")
-    );
+    // ==== Tambahin CC buat Level 3 ====
+    // Kirim email dengan CC support
+    if (layer === "LEVEL_THREE") {
+      MailApp.sendEmail({
+        to: recipientEmail,
+        cc: "mhmdfdln14@gmail.com",
+        subject: subject,
+        htmlBody: htmlBody,
+        body: plainBody,
+        name: senderName,
+      });
+    } else {
+      MailApp.sendEmail({
+        to: recipientEmail,
+        subject: subject,
+        htmlBody: htmlBody,
+        body: plainBody,
+        name: senderName,
+      });
+    }
     return true;
   } catch (error) {
     Logger.log("Error sending email: " + error.toString());
